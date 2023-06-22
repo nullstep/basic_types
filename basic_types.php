@@ -35,6 +35,10 @@ define('_ARGS_BASIC_TYPES', [
 		'type' => 'string',
 		'default' => 'yes'
 	],
+	'bt_title' => [
+		'type' => 'string',
+		'default' => ''
+	],
 	'bt_posts' => [
 		'type' => 'string',
 		'default' => '[]'
@@ -55,6 +59,10 @@ define('_ADMIN_BASIC_TYPES', [
 			'bt_active' => [
 				'label' => 'Active',
 				'type' => 'check'
+			],
+			'bt_title' => [
+				'label' => 'Title',
+				'type' => 'input'
 			]
 		]
 	],
@@ -192,6 +200,13 @@ class _btSettings {
 			if (!array_key_exists($i, $defaults)) {
 				unset($settings[$i]);
 			}
+
+			if (in_array($i, ['bt_posts', 'bt_taxes'])) {
+				$settings[$i] = json_encode(
+					json_decode($setting),
+					JSON_PRETTY_PRINT
+				);
+			}
 		}
 		update_option(self::$option_key, $settings);
 	}
@@ -208,16 +223,17 @@ class _btMenu {
 	}
 
 	public function add_page() {
+		$title = (_BT['bt_title'] != '') ? _BT['bt_title'] : _PLUGIN_BASIC_TYPES;
 		add_menu_page(
-			_PLUGIN_BASIC_TYPES,
-			_PLUGIN_BASIC_TYPES,
+			$title,
+			$title,
 			'manage_options',
 			$this->slug,
 			[$this, 'render_admin'],
 			'data:image/svg+xml;base64,' . base64_encode(
 				'<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="500px" height="500px" viewbox="0 0 500 500"><path fill="#a7aaad" d="M250,9.8L42,129.9v240.2l208,120.1l208-120.1V129.9L250,9.8z M152.2,242.3c-13.1,1.1-26.5,0.7-39.6,0.3 c0.2-38.4,0-76.7,0.1-115.1c63.5,0.2,127.1,0.1,190.7,0.1c0.1,13.3,0.1,26.5,0,39.8c-50.2,0-100.5,0.1-150.7,0 C152.5,192.3,153.5,217.4,152.2,242.3z M302.6,397.8c-13.1-0.4-26.3,0-39.4-0.2c0.1-39.9,0-79.7,0-119.6c13.3,0.2,26.6,0,39.9,0.1 C302.8,318,303.9,358,302.6,397.8z M378.6,242.8c-50.2-0.7-100.5,0.1-150.7-0.4c-0.1,51.7,0,103.4-0.1,155.1 c-13.2,0.3-26.5,0.1-39.7,0.1c-0.1-65-0.1-129.9,0-194.9c50.2,0,100.4,0,150.7,0c0-25.1,0-50.1,0-75.2c13.3,0.1,26.6,0.1,39.9,0	C378.6,166,378.8,204.4,378.6,242.8z"/></svg>'
 			),
-			40
+			3
 		);
 
 		// add config submenu
@@ -234,7 +250,7 @@ class _btMenu {
 
 		if (count(_TAXES_BASIC_TYPES)) {
 			foreach (_TAXES_BASIC_TYPES as $tax => $type) {
-				$plural = (substr($tax, -1) == 'y') ? rtrim($tax, 'y') . 'ies' : $tax . 's';
+				$plural = bt_plural($tax);
 				add_submenu_page(
 					$this->slug,
 					ucwords($plural),
@@ -249,7 +265,8 @@ class _btMenu {
 
 		if (count(_POSTS_BASIC_TYPES)) {
 			foreach (_POSTS_BASIC_TYPES as $type => $data) {
-				$plural = (substr($type, -1) == 'y') ? rtrim($type, 'y') . 'ies' : $type . 's';
+				$plural = bt_plural($type);
+
 				add_submenu_page(
 					$this->slug,
 					ucwords($plural),
@@ -430,7 +447,7 @@ function bt_init($dir) {
 	if (count(_POSTS_BASIC_TYPES)) {
 		foreach (_POSTS_BASIC_TYPES as $type => $data) {
 			$uc_type = ucwords($type);
-			$p_type = (substr($uc_type, -1) == 'y') ? rtrim($uc_type, 'y') . 'ies' : $uc_type . 's';
+			$p_type = bt_plural($uc_type);
 
 			$labels = [
 				'name' => $p_type,
@@ -467,7 +484,7 @@ function bt_init($dir) {
 	if (count(_TAXES_BASIC_TYPES)) {
 		foreach (_TAXES_BASIC_TYPES as $tax => $type) {
 			$uc_tax = ucwords($tax);
-			$p_tax = (substr($uc_tax, -1) == 'y') ? rtrim($uc_tax, 'y') . 'ies' : $uc_tax . 's';
+			$p_tax = bt_plural($uc_tax);
 
 			$labels = [
 				'name' => $p_tax,
@@ -886,6 +903,26 @@ function bt_set_current_menu($parent_file) {
 		}
 	}
 	return $parent_file;
+}
+
+// pluralise string
+
+function bt_plural($string) {
+	switch (substr($string, -1)) {
+		case 'y': {
+			$plural = rtrim($string, 'y') . 'ies';
+			break;
+		}
+		case 'h': {
+			$plural = $string . 'es';
+			break;
+		}
+		default: {
+			$plural = $string . 's';
+		}
+	}
+
+	return $plural;
 }
 
 //   ▄█   ███▄▄▄▄▄     ▄█       ███      

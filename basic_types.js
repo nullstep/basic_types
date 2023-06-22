@@ -6,6 +6,7 @@ jQuery(function($) {
 	const plugin = basic_types;
 	const fields = [
 		'bt_active',
+		'bt_title',
 		'bt_posts',
 		'bt_taxes'
 	];

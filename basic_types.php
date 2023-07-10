@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy stuff
  * Author: Scott A. Dixon
  * Author URI: https://seventy9.co.uk
- * Version: 1.0.0
+ * Version: 1.0.1
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -925,6 +925,346 @@ function bt_plural($string) {
 	return $plural;
 }
 
+//   ▄█    █▄    ▄█      ▄████████   ▄█     █▄      ▄████████  
+//  ███    ███  ███     ███    ███  ███     ███    ███    ███  
+//  ███    ███  ███▌    ███    █▀   ███     ███    ███    █▀   
+//  ███    ███  ███▌   ▄███▄▄▄      ███     ███    ███         
+//  ███    ███  ███▌  ▀▀███▀▀▀      ███     ███  ▀███████████  
+//  ▀██    ███  ███     ███    █▄   ███     ███           ███  
+//   ▀██  ██▀   ███     ███    ███  ███ ▄█▄ ███     ▄█    ███  
+//    ▀████▀    █▀      ██████████   ▀███▀███▀    ▄████████▀ 
+
+function bt_posts_custom_column_views($column_name, $id) {
+	if (get_post_type(get_the_ID()) == 'post') {
+		if ($column_name === 'post_views') {
+			bc_get_views(get_the_ID());
+		}
+	}
+}
+
+function bt_sort_custom_column_query($query) {
+	$orderby = $query->get('orderby');
+	if (in_array($orderby, ['post_views', 'page_views'])) {
+		$meta_query = [
+			'relation' => 'OR',
+			[
+				'key' => $orderby . '_count',
+				'compare' => 'NOT EXISTS'
+			],
+			[
+				'key' => $orderby . '_count'
+			]
+		];
+		$query->set('meta_query', $meta_query);
+		$query->set('orderby', 'meta_value');
+	}
+}
+
+function bt_posts_column_views($defaults) {
+	if (get_post_type(get_the_ID()) == 'post') {
+		unset($defaults['date']);
+		$defaults['post_views'] = 'Views';
+		$defaults['date'] = 'Date';
+	}
+	return $defaults;
+}
+
+function bt_set_posts_sortable_columns($columns) {
+	$columns['post_views'] = 'post_views';
+	return $columns;
+}
+
+//     ▄████████   ▄█    ▄█            ███         ▄████████     ▄████████  
+//    ███    ███  ███   ███        ▀█████████▄    ███    ███    ███    ███  
+//    ███    █▀   ███▌  ███           ▀███▀▀██    ███    █▀     ███    ███  
+//   ▄███▄▄▄      ███▌  ███            ███   ▀   ▄███▄▄▄       ▄███▄▄▄▄██▀  
+//  ▀▀███▀▀▀      ███▌  ███            ███      ▀▀███▀▀▀      ▀▀███▀▀▀▀▀    
+//    ███         ███   ███            ███        ███    █▄   ▀███████████  
+//    ███         ███   ███▌    ▄      ███        ███    ███    ███    ███  
+//    ███         █▀    █████▄▄██     ▄████▀      ██████████    ███    ███
+
+function bt_add_filter_to_slides_list() {
+	$type = (isset($_GET['post_type'])) ? $_GET['post_type'] : 'post';
+
+	if ($type == 'slide') {
+		$banners = get_terms([
+			'taxonomy' => 'banner',
+			'hide_empty' => FALSE,
+		]);
+
+		echo '<select name="banner_name">';
+		echo '<option value="">Filter By...</option>';
+
+		$current = isset($_GET['banner_name']) ? $_GET['banner_name'] : '';
+
+		foreach ($banners as $banner) {
+			printf(
+				'<option value="%s"%s>%s</option>',
+				$banner->name,
+				$banner->name == $current ? ' selected="selected"' : '',
+				$banner->name
+			);
+		}
+
+		echo '</select>';
+		echo '<style>.ui-sortable-handle{cursor:move}</style>';
+	}
+}
+
+function bt_slides_filter($query) {
+	global $pagenow;
+	$type = (isset($_GET['post_type'])) ? $_GET['post_type'] : 'post';
+
+	if (is_admin() && $type == 'slide' && $pagenow == 'edit.php') {
+		if (isset($_GET['banner_name']) && $_GET['banner_name'] != '') {
+			$query->query_vars['banner'] = $_GET['banner_name'];
+		}
+	}
+}
+
+//     ▄████████   ▄██████▄      ▄████████      ███      
+//    ███    ███  ███    ███    ███    ███  ▀█████████▄  
+//    ███    █▀   ███    ███    ███    ███     ▀███▀▀██  
+//    ███         ███    ███   ▄███▄▄▄▄██▀      ███   ▀  
+//  ▀███████████  ███    ███  ▀▀███▀▀▀▀▀        ███      
+//           ███  ███    ███  ▀███████████      ███      
+//     ▄█    ███  ███    ███    ███    ███      ███      
+//   ▄████████▀    ▀██████▀     ███    ███     ▄████▀    
+
+function bt_get_previous_post_where($where, $in_same_term, $excluded_terms) {
+	global $post, $wpdb;
+
+	if (empty($post)) {
+		return $where;
+	}
+	
+	$taxonomy = 'banner';
+	if (preg_match('/ tt.taxonomy = \'([^\']+)\'/i', $where, $match)) {
+		$taxonomy = $match[1];
+	}
+	
+	$_join = '';
+	$_where = '';
+	
+	if ($in_same_term || !empty($excluded_terms)) {
+		$_join = " INNER JOIN $wpdb->term_relationships AS tr ON p.ID = tr.object_id INNER JOIN $wpdb->term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id";
+		$_where = $wpdb->prepare("AND tt.taxonomy = %s", $taxonomy);
+
+		if (!empty($excluded_terms) && ! is_array($excluded_terms)) {
+			$excluded_terms = explode(',', $excluded_terms);
+			$excluded_terms = array_map('intval', $excluded_terms);
+		}
+
+		if ($in_same_term) {
+			$term_array = wp_get_object_terms($post->ID, $taxonomy, ['fields' => 'ids']);
+			$term_array = array_diff($term_array, (array) $excluded_terms);
+			$term_array = array_map('intval', $term_array);
+	
+			$_where .= " AND tt.term_id IN (" . implode(',', $term_array) . ")";
+		}
+
+		if (!empty($excluded_terms)) {
+			$_where .= " AND p.ID NOT IN ( SELECT tr.object_id FROM $wpdb->term_relationships tr LEFT JOIN $wpdb->term_taxonomy tt ON (tr.term_taxonomy_id = tt.term_taxonomy_id) WHERE tt.term_id IN (" . implode(',', $excluded_terms) . '))';
+		}
+	}
+		
+	$current_menu_order = $post->menu_order;
+	
+	$query = $wpdb->prepare("SELECT p.* FROM $wpdb->posts AS p $_join WHERE p.post_date < %s  AND p.menu_order = %d AND p.post_type = %s AND p.post_status = 'publish' $_where" ,  $post->post_date, $current_menu_order, $post->post_type);
+	$results = $wpdb->get_results($query);
+			
+	if (count($results) > 0) {
+		$where .= $wpdb->prepare( " AND p.menu_order = %d", $current_menu_order );
+	}
+	else {
+		$where = str_replace("p.post_date < '". $post->post_date  ."'", "p.menu_order > '$current_menu_order'", $where);
+	}
+	
+	return $where;
+}
+
+function bt_get_previous_post_sort($sort) {
+	global $post, $wpdb;
+	
+	$sort = 'ORDER BY p.menu_order ASC, p.post_date DESC LIMIT 1';
+	return $sort;
+}
+
+function bt_get_next_post_where($where, $in_same_term, $excluded_terms) {
+	global $post, $wpdb;
+
+	if (empty($post)) {
+		return $where;
+	}
+	
+	$taxonomy = 'banner';
+	if (preg_match('/ tt.taxonomy = \'([^\']+)\'/i',$where, $match)) {
+		$taxonomy = $match[1];
+	}
+	
+	$_join = '';
+	$_where = '';
+				
+	if ($in_same_term || !empty($excluded_terms)) {
+		$_join = " INNER JOIN $wpdb->term_relationships AS tr ON p.ID = tr.object_id INNER JOIN $wpdb->term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id";
+		$_where = $wpdb->prepare("AND tt.taxonomy = %s", $taxonomy);
+
+		if (!empty($excluded_terms) && ! is_array($excluded_terms)) {
+			$excluded_terms = explode(',', $excluded_terms);
+			$excluded_terms = array_map('intval', $excluded_terms);
+		}
+
+		if ($in_same_term) {
+			$term_array = wp_get_object_terms($post->ID, $taxonomy, ['fields' => 'ids']);
+			$term_array = array_diff($term_array, (array) $excluded_terms);
+			$term_array = array_map('intval', $term_array);
+	
+			$_where .= " AND tt.term_id IN (" . implode(',', $term_array) . ")";
+		}
+
+		if (!empty($excluded_terms)) {
+			$_where .= " AND p.ID NOT IN ( SELECT tr.object_id FROM $wpdb->term_relationships tr LEFT JOIN $wpdb->term_taxonomy tt ON (tr.term_taxonomy_id = tt.term_taxonomy_id) WHERE tt.term_id IN (" . implode(',', $excluded_terms) . '))';
+		}
+	}
+		
+	$current_menu_order = $post->menu_order;
+	
+	$query = $wpdb->prepare("SELECT p.* FROM $wpdb->posts AS p $_join WHERE p.post_date > %s AND p.menu_order = %d AND p.post_type = %s AND p.post_status = 'publish' $_where", $post->post_date, $current_menu_order, $post->post_type);
+	$results = $wpdb->get_results($query);
+			
+	if (count($results) > 0) {
+		$where .= $wpdb->prepare(" AND p.menu_order = %d", $current_menu_order);
+	}
+	else {
+		$where = str_replace("p.post_date > '". $post->post_date  ."'", "p.menu_order < '$current_menu_order'", $where);
+	}
+	
+	return $where;
+}
+
+function bt_get_next_post_sort($sort) {
+	global $post, $wpdb; 
+	
+	$sort = 'ORDER BY p.menu_order DESC, p.post_date ASC LIMIT 1';	
+	return $sort;    
+}
+
+function bt_pre_get_posts($query) {	
+	return $query;
+}
+
+function bt_posts_orderby($order_by, $query) {
+	global $wpdb;
+	
+	if ($query->query_vars['post_type'] != 'slide') {
+		return $order_by;
+	}
+			
+	return $order_by;
+}
+
+//     ▄████████       ▄█     ▄████████  ▀████    ▐████▀  
+//    ███    ███      ███    ███    ███    ███▌   ████▀   
+//    ███    ███      ███    ███    ███     ███  ▐███     
+//    ███    ███      ███    ███    ███     ▀███▄███▀     
+//  ▀███████████      ███  ▀███████████     ████▀██▄      
+//    ███    ███      ███    ███    ███    ▐███  ▀███     
+//    ███    ███  █▄ ▄███    ███    ███   ▄███     ███▄   
+//    ███    █▀   ▀▀▀▀▀▀     ███    █▀   ████       ███▄
+
+function bt_save_ajax_order() {
+	global $wpdb;
+	$nonce = $_POST['interface_sort_nonce'];
+	
+	if (!wp_verify_nonce($nonce, 'interface_sort_nonce')) {
+		die();
+	}
+	
+	parse_str($_POST['order'], $data);
+	
+	if (is_array($data)) {
+		foreach($data as $key => $values) {
+			if ($key == 'item') {
+				foreach($values as $position => $id) {
+					$id = (int)$id;
+					$data = array('menu_order' => $position);
+					$data = apply_filters('bt-save-ajax-order', $data, $key, $id);
+					$wpdb->update( $wpdb->posts, $data, array('ID' => $id) );
+				} 
+			}
+			else {
+				foreach($values as $position => $id) {
+					$id = (int)$id;
+					$data = array('menu_order' => $position, 'post_parent' => str_replace('item_', '', $key));
+					$data = apply_filters('bt-save-ajax-order', $data, $key, $id);
+					$wpdb->update( $wpdb->posts, $data, array('ID' => $id) );
+				}
+			}
+		}		
+	}
+
+	do_action('bt_order_update_complete');
+}
+
+function bt_save_archive_ajax_order() {
+	global $wpdb, $userdata;
+	
+	$post_type = filter_var ( $_POST['post_type'], FILTER_SANITIZE_STRING);
+	$paged = filter_var ( $_POST['paged'], FILTER_SANITIZE_NUMBER_INT);
+	$nonce = $_POST['archive_sort_nonce'];
+	
+	if (!wp_verify_nonce($nonce, 'bt_archive_sort_nonce_' . $userdata->ID)) {
+		die();
+	}
+	
+	parse_str($_POST['order'], $data);
+	
+	if (!is_array($data) || count($data) < 1) {
+		die();
+	}
+	
+	$mysql_query = $wpdb->prepare("SELECT ID FROM " . $wpdb->posts . " WHERE post_type = %s AND post_status IN ('publish', 'pending', 'draft', 'private', 'future', 'inherit') ORDER BY menu_order, post_date DESC", $post_type);
+	$results = $wpdb->get_results($mysql_query);
+	
+	if (!is_array($results) || count($results) < 1) {
+		die();
+	}
+	
+	$objects_ids = [];
+	foreach($results as $result) {
+		$objects_ids[] = (int)$result->ID;   
+	}
+	
+	global $userdata;
+
+	$objects_per_page = get_user_meta($userdata->ID ,'edit_' .  $post_type  .'_per_page', TRUE);
+	$objects_per_page = apply_filters("edit_{$post_type}_per_page", $objects_per_page);
+	
+	if (empty($objects_per_page)) {
+		$objects_per_page = 20;
+	}
+	
+	$edit_start_at = $paged * $objects_per_page - $objects_per_page;
+	$index = 0;
+	for ($i = $edit_start_at; $i < ($edit_start_at + $objects_per_page); $i++) {
+		if (!isset($objects_ids[$i])) {
+			break;
+		}
+			
+		$objects_ids[$i] = (int)$data['post'][$index];
+		$index++;
+	}
+	
+	foreach($objects_ids as $menu_order => $id) {
+		$data = ['menu_order' => $menu_order];	
+		$data = apply_filters('bt-save-ajax-order', $data, $menu_order, $id);
+		$wpdb->update($wpdb->posts, $data, array('ID' => $id));
+		clean_post_cache($id);
+	}
+		
+	do_action('bt_order_update_complete');					
+}
+
 //   ▄█   ███▄▄▄▄▄     ▄█       ███      
 //  ███   ███▀▀▀▀██▄  ███   ▀█████████▄  
 //  ███▌  ███    ███  ███▌     ▀███▀▀██  
@@ -949,6 +1289,21 @@ add_action('admin_enqueue_scripts', 'bt_admin_scripts');
 
 add_action('add_meta_boxes', 'bt_add_metaboxes');
 add_action('save_post', 'bt_save_postdata');
+
+//add_action('manage_posts_custom_column', 'bt_posts_custom_column_views', 5, 2);
+//add_action('pre_get_posts', 'bt_sort_custom_column_query');
+//add_filter('manage_posts_columns', 'bt_posts_column_views');
+//add_filter('manage_edit-post_sortable_columns', 'bt_set_posts_sortable_columns');
+
+//add_action('restrict_manage_posts', 'bt_add_filter_to_slides_list');
+//add_filter('parse_query', 'bt_slides_filter');
+
+//add_action('wp_ajax_update-custom-type-order', 'bt_save_ajax_order');
+//add_action('wp_ajax_update-custom-type-order-archive', 'bt_save_archive_ajax_order');
+//add_filter('get_previous_post_where', 'bt_get_previous_post_where', 99, 3);
+//add_filter('get_previous_post_sort', 'bt_get_previous_post_sort');
+//add_filter('get_next_post_where', 'bt_get_next_post_where', 99, 3);
+//add_filter('get_next_post_sort', 'bt_get_next_post_sort');
 
 add_filter('parent_file', 'bt_set_current_menu');
 

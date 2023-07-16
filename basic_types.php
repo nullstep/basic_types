@@ -472,21 +472,27 @@ function bt_init($dir) {
 
 	// register roles
 
-	foreach (_ROLES_BASIC_TYPES['remove'] as $role) {
-		if (get_role($role)) {
-			remove_role($role);
+	if (count(_POSTS_BASIC_TYPES)) {
+		if (isset(_ROLES_BASIC_TYPES['remove'])) {
+			foreach (_ROLES_BASIC_TYPES['remove'] as $role) {
+				if (get_role($role)) {
+					remove_role($role);
+				}
+			}			
 		}
-	}
 
-	foreach (_ROLES_BASIC_TYPES['add'] as $role => $details) {
-		$capabilities = [];
-		foreach ($details['capabilities'] as $cap) {
-			$capabilities[$cap] = TRUE;
+		if (count(_ROLES_BASIC_TYPES['add'])) {
+			foreach (_ROLES_BASIC_TYPES['add'] as $role => $details) {
+				$capabilities = [];
+				foreach ($details['capabilities'] as $cap) {
+					$capabilities[$cap] = TRUE;
+				}
+				if (get_role($role)) {
+					remove_role($role);
+				}
+				add_role($role, $details['label'], $capabilities);
+			}			
 		}
-		if (get_role($role)) {
-			remove_role($role);
-		}
-		add_role($role, $details['label'], $capabilities);
 	}
 
 	// register post types

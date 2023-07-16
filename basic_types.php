@@ -41,11 +41,15 @@ define('_ARGS_BASIC_TYPES', [
 	],
 	'bt_posts' => [
 		'type' => 'string',
-		'default' => '[]'
+		'default' => '{}'
 	],
 	'bt_taxes' => [
 		'type' => 'string',
-		'default' => '[]'
+		'default' => '{}'
+	],
+	'bt_roles' => [
+		'type' => 'string',
+		'default' => '{}'
 	]
 ]);
 
@@ -85,6 +89,16 @@ define('_ADMIN_BASIC_TYPES', [
 				'type' => 'code'
 			]
 		]
+	],
+	'roles' => [
+		'label' => 'Roles Config',
+		'columns' => 1,
+		'fields' => [
+			'bt_roles' => [
+				'label' => 'Roles JSON',
+				'type' => 'code'
+			]
+		]
 	]
 ]);
 
@@ -116,7 +130,11 @@ define('_API_BASIC_TYPES', [
 //  ███         ███        ▀███████████  ▀███████████  ▀███████████  
 //  ███    █▄   ███          ███    ███           ███           ███  
 //  ███    ███  ███▌    ▄    ███    ███     ▄█    ███     ▄█    ███  
-//  ████████▀   █████▄▄██    ███    █▀    ▄████████▀    ▄████████▀   
+//  ████████▀   █████▄▄██    ███    █▀    ▄████████▀    ▄████████▀ 
+
+class bt {
+	public static $message = null;
+}
 
 class _btAPI {
 	public function add_routes() {
@@ -201,7 +219,7 @@ class _btSettings {
 				unset($settings[$i]);
 			}
 
-			if (in_array($i, ['bt_posts', 'bt_taxes'])) {
+			if (in_array($i, ['bt_posts', 'bt_taxes', 'bt_roles'])) {
 				$settings[$i] = json_encode(
 					json_decode($setting),
 					JSON_PRETTY_PRINT
@@ -308,6 +326,16 @@ class _btMenu {
 
 		$name = _PLUGIN_BASIC_TYPES;
 		$form = _ADMIN_BASIC_TYPES;
+
+		// output message
+
+		$message = null;
+
+		if ($message) {
+			echo '<div><pre>';
+				echo $message;
+			echo '</pre></div>';
+		}
 
 		// build form
 
@@ -442,6 +470,25 @@ function bt_init($dir) {
 		new _btMenu(_URL_BASIC_TYPES);
 	}
 
+	// register roles
+
+	foreach (_ROLES_BASIC_TYPES['remove'] as $role) {
+		if (get_role($role)) {
+			remove_role($role);
+		}
+	}
+
+	foreach (_ROLES_BASIC_TYPES['add'] as $role => $details) {
+		$capabilities = [];
+		foreach ($details['capabilities'] as $cap) {
+			$capabilities[$cap] = TRUE;
+		}
+		if (get_role($role)) {
+			remove_role($role);
+		}
+		add_role($role, $details['label'], $capabilities);
+	}
+
 	// register post types
 
 	if (count(_POSTS_BASIC_TYPES)) {
@@ -551,8 +598,8 @@ function bt_post_metabox($post) {
 	wp_nonce_field(plugins_url(__FILE__), 'wr_plugin_noncename');
 	wp_enqueue_media();
 ?>
-	<style>/* date picker */</style>
-	<script>// date picker</script>
+	<link href="https://cdnjs.cloudflare.com/ajax/libs/jquery-datetimepicker/2.5.20/jquery.datetimepicker.min.css" rel="stylesheet">
+	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-datetimepicker/2.5.20/jquery.datetimepicker.full.min.js"></script>
 	<style>
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box em,
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box label {
@@ -638,6 +685,10 @@ function bt_post_metabox($post) {
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box input:checked + .slider:before {
 			transform: translateX(22px);
+		}
+
+		.xdsoft_datetimepicker .xdsoft_label {
+			font-weight: normal;
 		}
 	</style>
 	<script>
@@ -770,7 +821,7 @@ function bt_post_metabox($post) {
 					echo '</label>';
 					echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
 					echo '<script>';
-						echo 'var date_' . $fid . ' = document.querySelector(\'#' . $fid . '\'); date_' . $fid . '.DatePickerX.init({format: \'dd/mm/yyyy\',titleFormatDay: \'dd MM yyyy\'});';
+						echo '$("#' . $fid . '").datetimepicker({timepicker:false,format:"d-m-Y"});';
 					echo '</script>';
 					break;
 				}
@@ -935,12 +986,40 @@ function bt_plural($string) {
 //    ▀████▀    █▀      ██████████   ▀███▀███▀    ▄████████▀ 
 
 function bt_posts_custom_column_views($column_name, $id) {
-	if (get_post_type(get_the_ID()) == 'post') {
-		if ($column_name === 'post_views') {
-			bc_get_views(get_the_ID());
+	$type = get_post_type(get_the_ID());
+	$prefix = '_' . _PREFIX_BASIC_TYPES . '_' . $type . '_';
+
+	if (isset(_POSTS_BASIC_TYPES[$type])) {
+
+		foreach (_POSTS_BASIC_TYPES[$type] as $field => $keys) {
+			if (($field == $column_name) && $keys['column']) {
+				echo get_post_meta($id, $prefix . $field, true);
+			}
 		}
 	}
 }
+
+function bt_posts_column_views($columns) {
+	$type = $_GET['post_type'];
+
+	if (isset(_POSTS_BASIC_TYPES[$type])) {
+		unset($columns['date']);
+
+		foreach (_POSTS_BASIC_TYPES[$type] as $field => $keys) {
+			if ($keys['column']) {
+				$columns[$field] = $keys['label'];
+			}
+		}
+		
+		$columns['date'] = 'Date';
+	}
+
+	return $columns;
+}
+
+/*
+
+NOT COMPLETE
 
 function bt_sort_custom_column_query($query) {
 	$orderby = $query->get('orderby');
@@ -960,19 +1039,20 @@ function bt_sort_custom_column_query($query) {
 	}
 }
 
-function bt_posts_column_views($defaults) {
-	if (get_post_type(get_the_ID()) == 'post') {
-		unset($defaults['date']);
-		$defaults['post_views'] = 'Views';
-		$defaults['date'] = 'Date';
-	}
-	return $defaults;
-}
-
 function bt_set_posts_sortable_columns($columns) {
-	$columns['post_views'] = 'post_views';
+	$type = get_post_type(get_the_ID());
+
+	if (isset(_POSTS_BASIC_TYPES[$type])) {
+		foreach (_POSTS_BASIC_TYPES[$type] as $field => $keys) {
+			if ($keys['column']) {
+				$columns[$field] = $field;
+			}
+		}
+	}
 	return $columns;
 }
+
+*/
 
 //     ▄████████   ▄█    ▄█            ███         ▄████████     ▄████████  
 //    ███    ███  ███   ███        ▀█████████▄    ███    ███    ███    ███  
@@ -982,6 +1062,10 @@ function bt_set_posts_sortable_columns($columns) {
 //    ███         ███   ███            ███        ███    █▄   ▀███████████  
 //    ███         ███   ███▌    ▄      ███        ███    ███    ███    ███  
 //    ███         █▀    █████▄▄██     ▄████▀      ██████████    ███    ███
+
+/*
+
+NOT COMPLETE
 
 function bt_add_filter_to_slides_list() {
 	$type = (isset($_GET['post_type'])) ? $_GET['post_type'] : 'post';
@@ -1022,6 +1106,8 @@ function bt_slides_filter($query) {
 	}
 }
 
+*/
+
 //     ▄████████   ▄██████▄      ▄████████      ███      
 //    ███    ███  ███    ███    ███    ███  ▀█████████▄  
 //    ███    █▀   ███    ███    ███    ███     ▀███▀▀██  
@@ -1029,7 +1115,11 @@ function bt_slides_filter($query) {
 //  ▀███████████  ███    ███  ▀▀███▀▀▀▀▀        ███      
 //           ███  ███    ███  ▀███████████      ███      
 //     ▄█    ███  ███    ███    ███    ███      ███      
-//   ▄████████▀    ▀██████▀     ███    ███     ▄████▀    
+//   ▄████████▀    ▀██████▀     ███    ███     ▄████▀
+
+/*
+
+NOT COMPLETE
 
 function bt_get_previous_post_where($where, $in_same_term, $excluded_terms) {
 	global $post, $wpdb;
@@ -1163,6 +1253,8 @@ function bt_posts_orderby($order_by, $query) {
 	return $order_by;
 }
 
+*/
+
 //     ▄████████       ▄█     ▄████████  ▀████    ▐████▀  
 //    ███    ███      ███    ███    ███    ███▌   ████▀   
 //    ███    ███      ███    ███    ███     ███  ▐███     
@@ -1171,6 +1263,10 @@ function bt_posts_orderby($order_by, $query) {
 //    ███    ███      ███    ███    ███    ▐███  ▀███     
 //    ███    ███  █▄ ▄███    ███    ███   ▄███     ███▄   
 //    ███    █▀   ▀▀▀▀▀▀     ███    █▀   ████       ███▄
+
+/*
+
+NOT COMPLETE
 
 function bt_save_ajax_order() {
 	global $wpdb;
@@ -1265,6 +1361,8 @@ function bt_save_archive_ajax_order() {
 	do_action('bt_order_update_complete');					
 }
 
+*/
+
 //   ▄█   ███▄▄▄▄▄     ▄█       ███      
 //  ███   ███▀▀▀▀██▄  ███   ▀█████████▄  
 //  ███▌  ███    ███  ███▌     ▀███▀▀██  
@@ -1278,11 +1376,13 @@ define('_BT', _btSettings::get_settings());
 
 if (_BT['bt_active'] == 'yes') {
 	define('_POSTS_BASIC_TYPES', json_decode(_BT['bt_posts'], TRUE));
-	define('_TAXES_BASIC_TYPES', json_decode(_BT['bt_taxes'], TRUE));	
+	define('_TAXES_BASIC_TYPES', json_decode(_BT['bt_taxes'], TRUE));
+	define('_ROLES_BASIC_TYPES', json_decode(_BT['bt_roles'], TRUE));
 }
 else {
 	define('_POSTS_BASIC_TYPES', []);
-	define('_TAXES_BASIC_TYPES', []);		
+	define('_TAXES_BASIC_TYPES', []);
+	define('_ROLES_BASIC_TYPES', []);
 }
 
 add_action('admin_enqueue_scripts', 'bt_admin_scripts');
@@ -1290,9 +1390,16 @@ add_action('admin_enqueue_scripts', 'bt_admin_scripts');
 add_action('add_meta_boxes', 'bt_add_metaboxes');
 add_action('save_post', 'bt_save_postdata');
 
-//add_action('manage_posts_custom_column', 'bt_posts_custom_column_views', 5, 2);
+if (count(_POSTS_BASIC_TYPES) > 0) {
+	foreach (_POSTS_BASIC_TYPES as $field => $keys) {
+		add_action('manage_' . $field . '_posts_custom_column', 'bt_posts_custom_column_views', 5, 2);
+		add_filter('manage_' . $field . '_posts_columns', 'bt_posts_column_views');
+	}
+}
+
+// NOT COMPLETE
+
 //add_action('pre_get_posts', 'bt_sort_custom_column_query');
-//add_filter('manage_posts_columns', 'bt_posts_column_views');
 //add_filter('manage_edit-post_sortable_columns', 'bt_set_posts_sortable_columns');
 
 //add_action('restrict_manage_posts', 'bt_add_filter_to_slides_list');

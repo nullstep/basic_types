@@ -8,11 +8,13 @@ jQuery(function($) {
 		'bt_active',
 		'bt_title',
 		'bt_posts',
-		'bt_taxes'
+		'bt_taxes',
+		'bt_roles'
 	];
 	const editors = [
 		'bt_posts',
-		'bt_taxes'
+		'bt_taxes',
+		'bt_roles'
 	];
 	// let's go
 	var cm = [];

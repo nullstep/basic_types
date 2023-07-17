@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy stuff
  * Author: Scott A. Dixon
  * Author URI: https://seventy9.co.uk
- * Version: 1.0.1
+ * Version: 1.0.2
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -266,9 +266,9 @@ class _btMenu {
 
 		// add custom taxonomies submenus
 
-		if (count(_TAXES_BASIC_TYPES)) {
+		if (bt_check_var(_TAXES_BASIC_TYPES)) {
 			foreach (_TAXES_BASIC_TYPES as $tax => $type) {
-				$plural = bt_plural($tax);
+				$plural = bt_plural(str_replace('_', ' ', $tax));
 				add_submenu_page(
 					$this->slug,
 					ucwords($plural),
@@ -281,9 +281,9 @@ class _btMenu {
 
 		// add custom posts submenus
 
-		if (count(_POSTS_BASIC_TYPES)) {
+		if (bt_check_var(_POSTS_BASIC_TYPES)) {
 			foreach (_POSTS_BASIC_TYPES as $type => $data) {
-				$plural = bt_plural($type);
+				$plural = bt_plural(str_replace('_', ' ', $type));
 
 				add_submenu_page(
 					$this->slug,
@@ -326,16 +326,6 @@ class _btMenu {
 
 		$name = _PLUGIN_BASIC_TYPES;
 		$form = _ADMIN_BASIC_TYPES;
-
-		// output message
-
-		$message = null;
-
-		if ($message) {
-			echo '<div><pre>';
-				echo $message;
-			echo '</pre></div>';
-		}
 
 		// build form
 
@@ -438,6 +428,22 @@ class _btMenu {
 //  ███    ███  ███    ███  ███   ▄███    ███    ███  
 //  ████████▀    ▀██████▀   ████████▀     ██████████
 
+// check vars
+
+function bt_check_var($var) {
+	$result = false;
+
+	if (isset($var)) {
+		if (is_array($var)) {
+			if (count($var) > 0) {
+				$result = true;
+			}
+		}
+	}
+
+	return $result;
+}
+
 // set screen/sub scripts
 
 function bt_admin_scripts() {
@@ -472,7 +478,7 @@ function bt_init($dir) {
 
 	// register roles
 
-	if (count(_POSTS_BASIC_TYPES)) {
+	if (bt_check_var(_ROLES_BASIC_TYPES)) {
 		if (isset(_ROLES_BASIC_TYPES['remove'])) {
 			foreach (_ROLES_BASIC_TYPES['remove'] as $role) {
 				if (get_role($role)) {
@@ -481,7 +487,7 @@ function bt_init($dir) {
 			}			
 		}
 
-		if (count(_ROLES_BASIC_TYPES['add'])) {
+		if (isset(_ROLES_BASIC_TYPES['add'])) {
 			foreach (_ROLES_BASIC_TYPES['add'] as $role => $details) {
 				$capabilities = [];
 				foreach ($details['capabilities'] as $cap) {
@@ -497,9 +503,9 @@ function bt_init($dir) {
 
 	// register post types
 
-	if (count(_POSTS_BASIC_TYPES)) {
+	if (bt_check_var(_POSTS_BASIC_TYPES)) {
 		foreach (_POSTS_BASIC_TYPES as $type => $data) {
-			$uc_type = ucwords($type);
+			$uc_type = ucwords(str_replace('_', ' ', $type));
 			$p_type = bt_plural($uc_type);
 
 			$labels = [
@@ -534,9 +540,9 @@ function bt_init($dir) {
 
 	// register taxonomies
 
-	if (count(_TAXES_BASIC_TYPES)) {
+	if (bt_check_var(_TAXES_BASIC_TYPES)) {
 		foreach (_TAXES_BASIC_TYPES as $tax => $type) {
-			$uc_tax = ucwords($tax);
+			$uc_tax = ucwords(str_replace('_', ' ', $tax));
 			$p_tax = bt_plural($uc_tax);
 
 			$labels = [
@@ -692,6 +698,12 @@ function bt_post_metabox($post) {
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box input:checked + .slider:before {
 			transform: translateX(22px);
 		}
+		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box .bt_data-view {
+			display: inline-block;
+			width: 73%;
+			padding: 3px;
+			margin-top: 10px;
+		}
 
 		.xdsoft_datetimepicker .xdsoft_label {
 			font-weight: normal;
@@ -729,36 +741,31 @@ function bt_post_metabox($post) {
 
 		if ($keys['linked']) {
 			// this is a linked id field
-?>
-			<input type="hidden" id="<?php echo $fid; ?>" name="<?php echo $fname; ?>" value="<?php echo $fval; ?>">
-<?php
-			if ($keys['type'] == 'select') {
-				// this field needs a select box
-?>
-			<label><?php echo $keys['label']; ?>:</label>
-			<select id="<?php echo _PREFIX_BASIC_TYPES; ?>-<?php echo $keys['linked']; ?>">
-				<option value="0">Select <?php echo ucwords($keys['linked']); ?>&hellip;</option>
-<?php
+
+			if ($keys['type'] == 'view') {
+				// this is a view linked records field
+
+				echo '<label>' . $keys['label'] . ':</label>';
+
 				if ($keys['linked'] == 'user') {
-					$users = get_users([
-						'fields' => [
-							'id',
-							'display_name',
-							'user_login'
-						]
-					]);
+					// view all linked users
+
+					$roles = (strpos($keys['role'], ',') === true) ? explode(',', $keys['role']) : [$keys['role']];
+					$role = (isset($keys['role'])) ? ['role__in' => $roles] : null;
+					$users = get_users($role);
 
 					if (count($users)) {
 						foreach ($users as $user) {
-							$id = $user->ID;
-							$selected = ($id == $fval) ? ' selected' : '';
-							if (($keys['role'] == '') || (count(array_intersect(explode(',', $keys['role'], (array)$user->roles))))) {
-								echo '<option value="' . $id . '"' . $selected . '>' . $user->display_name . '</option>';
-							}
+							echo '<div id="user-' . $user->ID . '" class="bt_data-view">' . $user->display_name . '</div>';
 						}
+					}
+					else {
+						echo '<div id="user-none" class="bt_data-view">No data to view</div>';
 					}
 				}
 				else {
+					// view all linked records of 'type'
+
 					$loop = get_posts([
 						'post_type' => $keys['linked'],
 						'post_status' => 'public',
@@ -769,25 +776,71 @@ function bt_post_metabox($post) {
 
 					if (count($loop) > 0) {
 						foreach ($loop as $post) {
-							$id = $post->ID;
-							$selected = ($id == $fval) ? ' selected' : '';
 							if ($post->post_title != 'Auto Draft') {
-								echo '<option value="' . $id . '"' . $selected . '>' . $post->post_title . '</option>';
+								echo '<div value="' . $keys['linked'] . '-' . $post->ID . '">' . $post->post_title . '</div>';
 							}
 						}
 					}
 				}
+
+				echo '<span class="desc">' . $keys['description'] . '</span>';
+			}
+			else {
+				// this is a standard linked record field
 ?>
-			</select>
-			<span class="desc"><?php echo $keys['description']; ?></span>
-			<script>
-				var <?php echo $field; ?>_select = $('#<?php echo _PREFIX_BASIC_TYPES; ?>-<?php echo $keys['linked']; ?>');
-				var <?php echo $field; ?>_input = $('#<?php echo _PREFIX_BASIC_TYPES; ?>_<?php echo $type; ?>_<?php echo $field; ?>');
-				<?php echo $field; ?>_select.on('change', function() {
-					<?php echo $field; ?>_input.val($(this).val());
-				});
-			</script>
+				<input type="hidden" id="<?php echo $fid; ?>" name="<?php echo $fname; ?>" value="<?php echo $fval; ?>">
 <?php
+				if ($keys['type'] == 'select') {
+					// this field needs a select box
+?>
+				<label><?php echo $keys['label']; ?>:</label>
+				<select id="<?php echo _PREFIX_BASIC_TYPES; ?>-<?php echo $keys['linked']; ?>">
+					<option value="0">Select <?php echo ucwords(str_replace('_', ' ', $keys['linked'])); ?>&hellip;</option>
+<?php
+					if ($keys['linked'] == 'user') {
+						$roles = (strpos($keys['role'], ',') === true) ? explode(',', $keys['role']) : [$keys['role']];
+						$role = (isset($keys['role'])) ? ['role__in' => $roles] : null;
+						$users = get_users($role);
+
+						if (count($users)) {
+							foreach ($users as $user) {
+								$id = $user->ID;
+								$selected = ($id == $fval) ? ' selected' : '';
+								echo '<option value="' . $id . '"' . $selected . '>' . $user->display_name . '</option>';
+							}
+						}
+					}
+					else {
+						$loop = get_posts([
+							'post_type' => $keys['linked'],
+							'post_status' => 'public',
+							'posts_per_page' => '-1',
+							'orderby' => 'title',
+							'order' => 'ASC'
+						]);
+
+						if (count($loop) > 0) {
+							foreach ($loop as $post) {
+								$id = $post->ID;
+								$selected = ($id == $fval) ? ' selected' : '';
+								if ($post->post_title != 'Auto Draft') {
+									echo '<option value="' . $id . '"' . $selected . '>' . $post->post_title . '</option>';
+								}
+							}
+						}
+					}
+?>
+				</select>
+				<span class="desc"><?php echo $keys['description']; ?></span>
+				<script>
+					var <?php echo $field; ?>_select = $('#<?php echo _PREFIX_BASIC_TYPES; ?>-<?php echo $keys['linked']; ?>');
+					var <?php echo $field; ?>_input = $('#<?php echo _PREFIX_BASIC_TYPES; ?>_<?php echo $type; ?>_<?php echo $field; ?>');
+					<?php echo $field; ?>_select.on('change', function() {
+						<?php echo $field; ?>_input.val($(this).val());
+					});
+				</script>
+<?php
+				}
 			}
 		}
 		else {
@@ -947,16 +1000,18 @@ function bt_save_postdata($post_id) {
 function bt_set_current_menu($parent_file) {
 	global $submenu_file, $current_screen, $pagenow;
 
-	foreach (_TAXES_BASIC_TYPES as $tax => $type) {
+	if (bt_check_var(_TAXES_BASIC_TYPES)) {
+		foreach (_TAXES_BASIC_TYPES as $tax => $type) {
 
-		if ($current_screen->id == 'edit-' . $tax) {
-			if ($pagenow == 'post.php') {
-				$submenu_file = 'edit.php?post_type=' . $current_screen->post_type;
+			if ($current_screen->id == 'edit-' . $tax) {
+				if ($pagenow == 'post.php') {
+					$submenu_file = 'edit.php?post_type=' . $current_screen->post_type;
+				}
+				if ($pagenow == 'edit-tags.php') {
+					$submenu_file = 'edit-tags.php?taxonomy=' . $tax . '&post_type=' . $current_screen->post_type;
+				}
+				$parent_file = _PLUGIN_BASIC_TYPES . '-menu';
 			}
-			if ($pagenow == 'edit-tags.php') {
-				$submenu_file = 'edit-tags.php?taxonomy=' . $tax . '&post_type=' . $current_screen->post_type;
-			}
-			$parent_file = _PLUGIN_BASIC_TYPES . '-menu';
 		}
 	}
 	return $parent_file;
@@ -1114,6 +1169,18 @@ function bt_slides_filter($query) {
 
 */
 
+function bt_admin_output() {
+	if (BT::$message) {
+		bt_print_output(BT::$message);
+	}
+}
+
+function bt_print_output($message) {
+	echo '<div class="notice notice-info"><pre>';
+		echo var_export($message, true);
+	echo '</pre></div>';
+}
+
 //   ▄█   ███▄▄▄▄▄     ▄█       ███      
 //  ███   ███▀▀▀▀██▄  ███   ▀█████████▄  
 //  ███▌  ███    ███  ███▌     ▀███▀▀██  
@@ -1136,12 +1203,13 @@ else {
 	define('_ROLES_BASIC_TYPES', []);
 }
 
+add_action('admin_notices', 'bt_admin_output');
 add_action('admin_enqueue_scripts', 'bt_admin_scripts');
 
 add_action('add_meta_boxes', 'bt_add_metaboxes');
 add_action('save_post', 'bt_save_postdata');
 
-if (count(_POSTS_BASIC_TYPES) > 0) {
+if (bt_check_var(_POSTS_BASIC_TYPES)) {
 	foreach (_POSTS_BASIC_TYPES as $field => $keys) {
 		add_action('manage_' . $field . '_posts_custom_column', 'bt_posts_custom_column_views', 5, 2);
 		add_filter('manage_' . $field . '_posts_columns', 'bt_posts_column_views');

@@ -768,7 +768,7 @@ function bt_post_metabox($post) {
 
 					$loop = get_posts([
 						'post_type' => $keys['linked'],
-						'post_status' => 'public',
+						'post_status' => 'publish',
 						'posts_per_page' => '-1',
 						'orderby' => 'title',
 						'order' => 'ASC'

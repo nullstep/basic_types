@@ -891,6 +891,23 @@ function bt_post_metabox($post) {
 					echo '<textarea id="' . $fid . '" class="tabs" name="' . $fname . '">' . $fval . '</textarea>';
 					break;
 				}
+				case 'code': {
+					echo '<label for="' . $fid . '">';
+						echo $keys['label'] . ':';
+					echo '</label>';
+					echo '<textarea id="' . $fid . '" class="code" name="' . $fname . '"></textarea>';
+					break;
+				}
+				case 'content': {
+					echo '<label for="' . $fid . '">';
+						echo $keys['label'] . ':';
+					echo '</label>';
+					wp_editor('', $fid, [
+						'media_buttons' => TRUE,
+						'textarea_name' => $fname
+					]);
+					break;
+				}
 				case 'file': {
 					echo '<label for="' . $fid . '">';
 						echo $keys['label'] . ':';

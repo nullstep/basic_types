@@ -66,7 +66,15 @@
 	height: 200px;
 }
 
+#basic_types-form .button-primary {
+	background: var(--admin-highlight);
+	color: var(--admin-contrast);
+}
+
 #basic_types-form .choose-file-button {
+	background: var(--admin-highlight);
+	color: var(--admin-contrast);
+	border: 1px solid var(--admin-highlight);
 	position: relative;
 	height: 30px;
 	top: 0;
@@ -119,11 +127,11 @@
 }
 
 #basic_types-form input:checked + .slider {
-	background-color: #2271b1;
+	background-color: var(--admin-highlight);
 }
 
 #basic_types-form input:focus + .slider {
-	box-shadow: 0 0 1px #2271b1;
+	box-shadow: 0 0 1px var(--admin-highlight);
 }
 
 #basic_types-form input:checked + .slider:before {

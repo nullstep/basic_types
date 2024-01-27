@@ -610,13 +610,23 @@ function bt_post_metabox($post) {
 	wp_nonce_field(plugins_url(__FILE__), 'wr_plugin_noncename');
 	wp_enqueue_media();
 ?>
-	<link href="https://cdnjs.cloudflare.com/ajax/libs/jquery-datetimepicker/2.5.20/jquery.datetimepicker.min.css" rel="stylesheet">
-	<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-datetimepicker/2.5.20/jquery.datetimepicker.full.min.js"></script>
+	<script>
+		!function(t){t.fn.date=function(){t(this).each((function(e,r){let a=t(r);if(void 0===a.attr("class")||0===a.attr("class").length)return console.error("class missing"),!1;let n=a.attr("class"),l=a.val(),s=n;if("text"!==a.attr("type"))return console.error("attr text missing"),!1;s.length>0&&a.removeClass(s);let o=t(`\n\t\t\t<input type="date" value="${l}" class="${s}">\n\t\t\t`);a.before(o).attr("done",!0).hide(),t(o,t(a).not('[done="true"]')).change((function(e){let r=t(e.currentTarget),n=a;return r.attr("value",r.val()),"date"===r.attr("type")&&(l=r.val()),n.attr("value",l),!1}))}))}}(jQuery);
+	</script>
 	<style>
+		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box .field-title {
+			position: absolute;
+			display: inline-block;
+			width: 20%;
+		}
+		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box .field-edit {
+			display: inline-block;
+			margin-left: 20%;
+			width: 80%;
+		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box em,
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box label {
 			display: inline-block;
-			width: 20%;
 			font-weight: 700;
 			font-style: normal;
 			padding-top: 4px;
@@ -626,31 +636,32 @@ function bt_post_metabox($post) {
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box textarea {
 			box-sizing: border-box;
 			display: inline-block;
-			width: 73%;
 			padding: 3px;
+			width: 100%;
 			vertical-align: middle;
 			margin-top: 10px;
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box span.desc {
 			display: block;
-			width: 18%;
 			padding-top: 0px;
-			clear: both;
 			font-style: italic;
 			font-size: 12px;
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box div.middle {
+			position: relative;
 			margin-bottom: 10px;
 			padding-bottom: 10px;
 			border-bottom: 1px dashed #ddd;
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box div.top {
+			position: relative;
 			margin-top: 10px;
 			margin-bottom: 10px;
 			padding-bottom: 10px;
 			border-bottom: 1px dashed #ddd;
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box div.bottom {
+			position: relative;
 			margin-bottom: 0;
 			padding-bottom: 0;
 			border-bottom: 0;
@@ -704,10 +715,6 @@ function bt_post_metabox($post) {
 			padding: 3px;
 			margin-top: 10px;
 		}
-
-		.xdsoft_datetimepicker .xdsoft_label {
-			font-weight: normal;
-		}
 	</style>
 	<script>
 		var $ = jQuery;
@@ -745,7 +752,12 @@ function bt_post_metabox($post) {
 			if ($keys['type'] == 'view') {
 				// this is a view linked records field
 
-				echo '<label>' . $keys['label'] . ':</label>';
+				echo '<div class="field-title">';
+					echo '<label>' . $keys['label'] . ':</label>';
+					echo '<span class="desc">' . $keys['description'] . '</span>';
+				echo '</div>';
+
+				echo '<div class="field-edit">';
 
 				if ($keys['linked'] == 'user') {
 					// view all linked users
@@ -783,7 +795,7 @@ function bt_post_metabox($post) {
 					}
 				}
 
-				echo '<span class="desc">' . $keys['description'] . '</span>';
+				echo '</div>';
 			}
 			else {
 				// this is a standard linked record field
@@ -793,9 +805,15 @@ function bt_post_metabox($post) {
 				if ($keys['type'] == 'select') {
 					// this field needs a select box
 ?>
-				<label><?php echo $keys['label']; ?>:</label>
-				<select id="<?php echo _PREFIX_BASIC_TYPES; ?>-<?php echo $keys['linked']; ?>">
-					<option value="0">Select <?php echo ucwords(str_replace('_', ' ', $keys['linked'])); ?>&hellip;</option>
+				<div class="field-title">
+					<label><?php echo $keys['label']; ?>:</label>
+					<span class="desc"><?php echo $keys['description']; ?></span>
+				</div>
+
+				<div class="field-edit">
+
+					<select id="<?php echo _PREFIX_BASIC_TYPES; ?>-<?php echo $keys['linked']; ?>">
+						<option value="0">Select <?php echo ucwords(str_replace('_', ' ', $keys['linked'])); ?>&hellip;</option>
 <?php
 					if ($keys['linked'] == 'user') {
 						$roles = (strpos($keys['role'], ',') === true) ? explode(',', $keys['role']) : [$keys['role']];
@@ -830,8 +848,9 @@ function bt_post_metabox($post) {
 						}
 					}
 ?>
-				</select>
-				<span class="desc"><?php echo $keys['description']; ?></span>
+					</select>
+				</div>
+
 				<script>
 					var <?php echo $field; ?>_select = $('#<?php echo _PREFIX_BASIC_TYPES; ?>-<?php echo $keys['linked']; ?>');
 					var <?php echo $field; ?>_input = $('#<?php echo _PREFIX_BASIC_TYPES; ?>_<?php echo $type; ?>_<?php echo $field; ?>');
@@ -846,103 +865,138 @@ function bt_post_metabox($post) {
 		else {
 			// this is a data field
 
+			echo '<div class="field-title">';
+
 			switch ($keys['type']) {
 				case 'select': {
-					echo '<label for="' . $fid . '">';
-						echo $keys['label'] . ':';
-					echo '</label>';
-					echo '<select id="' . $fid . '" name="' . $fname . '">';
-						echo '<option value="0">Select ' . $keys['label'] . '&hellip;</option>';
-						foreach ($keys['values'] as $value => $label) {
-							$selected = ($fval == $value) ? ' selected' : '';
-							echo '<option value="' . $value . '"' . $selected . '>' . $label . '</option>';
-						}
-					echo '</select>';
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<select id="' . $fid . '" name="' . $fname . '">';
+							echo '<option value="0">Select ' . $keys['label'] . '&hellip;</option>';
+							foreach ($keys['values'] as $value => $label) {
+								$selected = ($fval == $value) ? ' selected' : '';
+								echo '<option value="' . $value . '"' . $selected . '>' . $label . '</option>';
+							}
+						echo '</select>';
 					break;
 				}
 				case 'input': {
-					echo '<label for="' . $fid . '">';
-						echo $keys['label'] . ':';
-					echo '</label>';
-					echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
 					break;
 				}
 				case 'display': {
-					echo '<label for="' . $fid . '">';
-						echo $keys['label'] . ':';
-					echo '</label>';
-					echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" readonly>';
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" readonly>';
 					break;
 				}
 				case 'date': {
-					echo '<label for="' . $fid . '">';
-						echo $keys['label'] . ':';
-					echo '</label>';
-					echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
-					echo '<script>';
-						echo '$("#' . $fid . '").datetimepicker({timepicker:false,format:"d-m-Y"});';
-					echo '</script>';
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="text" id="' . $fid . '" class="date" name="' . $fname . '" value="' . $fval . '">';
+						echo '<script>';
+							echo '$("#' . $fid . '").date();';
+						echo '</script>';
 					break;
 				}
 				case 'text': {
-					echo '<label for="' . $fid . '">';
-						echo $keys['label'] . ':';
-					echo '</label>';
-					echo '<textarea id="' . $fid . '" class="tabs" name="' . $fname . '">' . $fval . '</textarea>';
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<textarea id="' . $fid . '" class="tabs" name="' . $fname . '">' . $fval . '</textarea>';
 					break;
 				}
 				case 'code': {
-					echo '<label for="' . $fid . '">';
-						echo $keys['label'] . ':';
-					echo '</label>';
-					echo '<textarea id="' . $fid . '" class="code" name="' . $fname . '"></textarea>';
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<textarea id="' . $fid . '" class="code" name="' . $fname . '"></textarea>';
 					break;
 				}
 				case 'content': {
-					echo '<label for="' . $fid . '">';
-						echo $keys['label'] . ':';
-					echo '</label>';
-					wp_editor('', $fid, [
-						'media_buttons' => TRUE,
-						'textarea_name' => $fname
-					]);
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<div style="width:100%;display:inline-block">';
+							wp_editor($fval, $fid, [
+								'media_buttons' => $keys['media'],
+								'textarea_name' => $fname
+							]);
+						echo '</div>';
 					break;
 				}
 				case 'file': {
-					echo '<label for="' . $fid . '">';
-						echo $keys['label'] . ':';
-					echo '</label>';
-					echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:68%">';
-					echo '<input data-id="' . $fid . '" type="button" class="button-primary choose-file-button" value="..." style="width:5%">';
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:90%">';
+						echo '<input data-id="' . $fid . '" type="button" class="button-primary choose-file-button" value="..." style="width:5%">';
 					break;
 				}
 				case 'colour': {
-					echo '<label for="' . $fid . '">';
-						echo $keys['label'] . ':';
-					echo '</label>';
-					echo '<input id="' . $fid . '" type="text" name="' . $fname . '">';
-					echo '<input data-id="' . $fid . '" type="color" class="choose-colour-button" value="' . $fval . '">';
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input id="' . $fid . '" type="text" name="' . $fname . '">';
+						echo '<input data-id="' . $fid . '" type="color" class="choose-colour-button" value="' . $fval . '">';
 					break;
 				}
 				case 'check': {
-					echo '<em>' . $keys['label'] . ':</em>';
-					echo '<label class="switch">';
-						echo '<input type="hidden" name="' . $fname . '" value="no">';
-						echo '<input type="checkbox" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
-						echo '<span class="slider"></span>';
-					echo '</label>';
-					echo '<script>';
-						echo '$("#' . $fid . '").on("change", function() {';
-							echo '$("#' . $fid . '").val(($("#' . $fid . '").prop("checked")) ? "yes" : "no");';
-						echo '});';
-						echo 'if ("yes" == "' . $fval . '") {';
-							echo '$("#' . $fid . '").prop("checked", true);';
-						echo '}';
-					echo '</script>';
+						echo '<em>' . $keys['label'] . ':</em>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<label class="switch">';
+							echo '<input type="hidden" name="' . $fname . '" value="no">';
+							echo '<input type="checkbox" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
+							echo '<span class="slider"></span>';
+						echo '</label>';
+						echo '<script>';
+							echo '$("#' . $fid . '").on("change", function() {';
+								echo '$("#' . $fid . '").val(($("#' . $fid . '").prop("checked")) ? "yes" : "no");';
+							echo '});';
+							echo 'if ("yes" == "' . $fval . '") {';
+								echo '$("#' . $fid . '").prop("checked", true);';
+							echo '}';
+						echo '</script>';
 					break;
 				}
 			}
-			echo '<span class="desc">' . $keys['description'] . '</span>';
+
+			echo '</div>';
 		}
 ?>
 		</div>

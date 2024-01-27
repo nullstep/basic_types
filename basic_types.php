@@ -225,6 +225,38 @@ class _btSettings {
 					JSON_PRETTY_PRINT
 				);
 			}
+
+			if ($i == 'bt_roles') {
+				// update roles
+
+				$roles = json_decode($setting, true);
+
+				if (bt_check_var($roles)) {
+					if (isset($roles['remove'])) {
+						foreach ($roles['remove'] as $role) {
+							if (get_role($role)) {
+								remove_role($role);
+							}
+						}			
+					}
+
+					if (isset($roles['add'])) {
+						foreach ($roles['add'] as $role => $details) {
+							$capabilities = [];
+							foreach ($details['capabilities'] as $cap) {
+								$capabilities[$cap] = TRUE;
+							}
+							if (get_role($role)) {
+								remove_role($role);
+							}
+							add_role($role, $details['label'], $capabilities);
+						}			
+					}
+				}
+				else {
+					// roles definition issue
+				}
+			}
 		}
 		update_option(self::$option_key, $settings);
 	}
@@ -474,31 +506,6 @@ function bt_init($dir) {
 
 	if (is_admin()) {
 		new _btMenu(_URL_BASIC_TYPES);
-	}
-
-	// register roles
-
-	if (bt_check_var(_ROLES_BASIC_TYPES)) {
-		if (isset(_ROLES_BASIC_TYPES['remove'])) {
-			foreach (_ROLES_BASIC_TYPES['remove'] as $role) {
-				if (get_role($role)) {
-					remove_role($role);
-				}
-			}			
-		}
-
-		if (isset(_ROLES_BASIC_TYPES['add'])) {
-			foreach (_ROLES_BASIC_TYPES['add'] as $role => $details) {
-				$capabilities = [];
-				foreach ($details['capabilities'] as $cap) {
-					$capabilities[$cap] = TRUE;
-				}
-				if (get_role($role)) {
-					remove_role($role);
-				}
-				add_role($role, $details['label'], $capabilities);
-			}			
-		}
 	}
 
 	// register post types

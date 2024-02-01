@@ -582,6 +582,18 @@ function bt_init($dir) {
 	}
 }
 
+// add back to... button on type edit page
+
+function bt_add_buttons_to_post_edit() {
+	global $post;
+
+	$type = $post->post_type;
+
+	if (isset(_POSTS_BASIC_TYPES[$type])) {
+		echo '<br><a class="button button-primary" href="/wp-admin/edit.php?post_type=' . $type . '">Back to ' . ucwords(bt_plural(str_replace('_', ' ', $type))) . ' List&hellip;</a><br><br>';
+	}
+}
+
 //     ▄███████▄   ▄██████▄      ▄████████      ███      
 //    ███    ███  ███    ███    ███    ███  ▀█████████▄  
 //    ███    ███  ███    ███    ███    █▀      ▀███▀▀██  
@@ -617,18 +629,16 @@ function bt_post_metabox($post) {
 	wp_nonce_field(plugins_url(__FILE__), 'wr_plugin_noncename');
 	wp_enqueue_media();
 ?>
-	<script>
-		!function(t){t.fn.date=function(){t(this).each((function(e,r){let a=t(r);if(void 0===a.attr("class")||0===a.attr("class").length)return console.error("class missing"),!1;let n=a.attr("class"),l=a.val(),s=n;if("text"!==a.attr("type"))return console.error("attr text missing"),!1;s.length>0&&a.removeClass(s);let o=t(`\n\t\t\t<input type="date" value="${l}" class="${s}">\n\t\t\t`);a.before(o).attr("done",!0).hide(),t(o,t(a).not('[done="true"]')).change((function(e){let r=t(e.currentTarget),n=a;return r.attr("value",r.val()),"date"===r.attr("type")&&(l=r.val()),n.attr("value",l),!1}))}))}}(jQuery);
-	</script>
 	<style>
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box .field-title {
 			position: absolute;
 			display: inline-block;
-			width: 20%;
+			width: 18%;
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box .field-edit {
 			display: inline-block;
 			margin-left: 20%;
+			margin-bottom: 10px;
 			width: 80%;
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box em,
@@ -647,6 +657,19 @@ function bt_post_metabox($post) {
 			width: 100%;
 			vertical-align: middle;
 			margin-top: 10px;
+		}
+		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box input[type=radio] {
+			margin-right: 20px;
+			width: 20px;
+			height: 20px;
+			margin-top: -4px;
+			appearance: none;
+			background-color: #fff;
+		}
+		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box input[type=radio]:checked::before,
+		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box input[type=radio]:checked {
+			background-color: var(--admin-highlight);
+			border: 2px solid var(--admin-highlight);
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box span.desc {
 			display: block;
@@ -708,10 +731,10 @@ function bt_post_metabox($post) {
 			border-radius: 50%;
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box input:checked + .slider {
-			background-color: #2271b1;
+			background-color: var(--admin-highlight);
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box input:focus + .slider {
-			box-shadow: 0 0 1px #2271b1;
+			box-shadow: 0 0 1px var(--admin-highlight);
 		}
 		#<?php echo _PREFIX_BASIC_TYPES; ?>_meta_box input:checked + .slider:before {
 			transform: translateX(22px);
@@ -838,7 +861,7 @@ function bt_post_metabox($post) {
 					else {
 						$loop = get_posts([
 							'post_type' => $keys['linked'],
-							'post_status' => 'public',
+							'post_status' => 'publish',
 							'posts_per_page' => '-1',
 							'orderby' => 'title',
 							'order' => 'ASC'
@@ -891,6 +914,19 @@ function bt_post_metabox($post) {
 						echo '</select>';
 					break;
 				}
+				case 'radio': {
+					echo '<em>';
+						echo $keys['label'] . ':';
+					echo '</em>';
+					foreach ($keys['values'] as $value => $label) {
+						$checked = ($fval == $value) ? ' checked' : '';
+						echo '<div style="display:inline-block;margin:14px 0 14px 0">';
+							echo '<span class="label">' . $label . '</span>';
+							echo '<input type="radio" name="' . $fname . '" value="' . $value . '"' . $checked . '>';
+						echo '</div>';
+					}
+					break;
+				}
 				case 'input': {
 						echo '<label for="' . $fid . '">';
 							echo $keys['label'] . ':';
@@ -918,10 +954,7 @@ function bt_post_metabox($post) {
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<input type="text" id="' . $fid . '" class="date" name="' . $fname . '" value="' . $fval . '">';
-						echo '<script>';
-							echo '$("#' . $fid . '").date();';
-						echo '</script>';
+						echo '<input type="date" id="' . $fid . '" class="date" name="' . $fname . '" value="' . $fval . '">';
 					break;
 				}
 				case 'text': {
@@ -1125,14 +1158,24 @@ function bt_plural($string) {
 //    ▀████▀    █▀      ██████████   ▀███▀███▀    ▄████████▀ 
 
 function bt_posts_custom_column_views($column_name, $id) {
-	$type = get_post_type(get_the_ID());
+	$type = get_post_type($id);
 	$prefix = '_' . _PREFIX_BASIC_TYPES . '_' . $type . '_';
 
 	if (isset(_POSTS_BASIC_TYPES[$type])) {
 
 		foreach (_POSTS_BASIC_TYPES[$type] as $field => $keys) {
 			if (($field == $column_name) && $keys['column']) {
-				echo get_post_meta($id, $prefix . $field, true);
+				switch ($keys['type']) {
+					case 'check': {
+						$yes = '<svg fill="#000000" height="18px" width="18px" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 490 490"><polygon points="452.253,28.326 197.831,394.674 29.044,256.875 0,292.469 207.253,461.674 490,54.528 "></polygon></svg>';
+						$no = '<svg fill="#000000"  height="16px" width="16px" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M0 14.545L1.455 16 8 9.455 14.545 16 16 14.545 9.455 8 16 1.455 14.545 0 8 6.545 1.455 0 0 1.455 6.545 8z" fill-rule="evenodd"></path></svg>';
+						echo (get_post_meta($id, $prefix . $field, true) == 'yes') ? $yes : $no;
+						break;
+					}
+					default: {
+						echo get_post_meta($id, $prefix . $field, true);
+					}
+				}
 			}
 		}
 	}
@@ -1156,42 +1199,40 @@ function bt_posts_column_views($columns) {
 	return $columns;
 }
 
-/*
-
-NOT COMPLETE
-
 function bt_sort_custom_column_query($query) {
-	$orderby = $query->get('orderby');
-	if (in_array($orderby, ['post_views', 'page_views'])) {
-		$meta_query = [
-			'relation' => 'OR',
-			[
-				'key' => $orderby . '_count',
-				'compare' => 'NOT EXISTS'
-			],
-			[
-				'key' => $orderby . '_count'
-			]
-		];
-		$query->set('meta_query', $meta_query);
-		$query->set('orderby', 'meta_value');
+	if (!is_admin() || !$query->is_main_query()) {
+		return;
+	}
+
+	$type = $_GET['post_type'];
+
+	if (isset(_POSTS_BASIC_TYPES[$type])) {
+		$orderby = $query->get('orderby');
+		$prefix = '_' . _PREFIX_BASIC_TYPES . '_' . $type . '_';
+
+		foreach (_POSTS_BASIC_TYPES[$type] as $field => $keys) {
+			if (isset($keys['column']) && isset($keys['sort'])) {
+				if ($orderby == $field) {
+					$query->set('meta_key', $prefix . $field);
+					$query->set('orderby', 'meta_value');
+				}
+			}
+		}
 	}
 }
 
 function bt_set_posts_sortable_columns($columns) {
-	$type = get_post_type(get_the_ID());
+	$type = $_GET['post_type'];
 
 	if (isset(_POSTS_BASIC_TYPES[$type])) {
 		foreach (_POSTS_BASIC_TYPES[$type] as $field => $keys) {
-			if ($keys['column']) {
+			if (isset($keys['column']) && isset($keys['sort'])) {
 				$columns[$field] = $field;
 			}
 		}
 	}
 	return $columns;
 }
-
-*/
 
 //     ▄████████   ▄█    ▄█            ███         ▄████████     ▄████████  
 //    ███    ███  ███   ███        ▀█████████▄    ███    ███    ███    ███  
@@ -1285,19 +1326,18 @@ add_action('admin_notices', 'bt_admin_output');
 add_action('admin_enqueue_scripts', 'bt_admin_scripts');
 
 add_action('add_meta_boxes', 'bt_add_metaboxes');
+add_action('edit_form_top', 'bt_add_buttons_to_post_edit');
 add_action('save_post', 'bt_save_postdata');
 
 if (bt_check_var(_POSTS_BASIC_TYPES)) {
 	foreach (_POSTS_BASIC_TYPES as $field => $keys) {
 		add_action('manage_' . $field . '_posts_custom_column', 'bt_posts_custom_column_views', 5, 2);
 		add_filter('manage_' . $field . '_posts_columns', 'bt_posts_column_views');
+		add_filter('manage_edit-' . $field . '_sortable_columns', 'bt_set_posts_sortable_columns');
 	}
 }
 
-// NOT COMPLETE
-
-//add_action('pre_get_posts', 'bt_sort_custom_column_query');
-//add_filter('manage_edit-post_sortable_columns', 'bt_set_posts_sortable_columns');
+add_action('pre_get_posts', 'bt_sort_custom_column_query');
 
 //add_action('restrict_manage_posts', 'bt_add_filter_to_slides_list');
 //add_filter('parse_query', 'bt_slides_filter');

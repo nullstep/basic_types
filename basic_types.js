@@ -7,6 +7,7 @@ jQuery(function($) {
 	const fields = [
 		'bt_active',
 		'bt_title',
+		'bt_icon',
 		'bt_posts',
 		'bt_taxes',
 		'bt_roles'

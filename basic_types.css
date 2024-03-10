@@ -67,14 +67,14 @@
 }
 
 #basic_types-form .button-primary {
-	background: var(--admin-highlight);
-	color: var(--admin-contrast);
+	background: var(--admin-highlight, #2271b1);
+	color: var(--admin-contrast, #fff);
 }
 
 #basic_types-form .choose-file-button {
-	background: var(--admin-highlight);
-	color: var(--admin-contrast);
-	border: 1px solid var(--admin-highlight);
+	background: var(--admin-highlight, #2271b1);
+	color: var(--admin-contrast, #fff);
+	border: 1px solid var(--admin-highlight, #2271b1);
 	position: relative;
 	height: 30px;
 	top: 0;
@@ -127,11 +127,11 @@
 }
 
 #basic_types-form input:checked + .slider {
-	background-color: var(--admin-highlight);
+	background-color: var(--admin-highlight, #2271b1);
 }
 
 #basic_types-form input:focus + .slider {
-	box-shadow: 0 0 1px var(--admin-highlight);
+	box-shadow: 0 0 1px var(--admin-highlight, #2271b1);
 }
 
 #basic_types-form input:checked + .slider:before {

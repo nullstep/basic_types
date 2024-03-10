@@ -1332,7 +1332,7 @@ class BT {
 							break;
 						}
 						default: {
-							echo get_post_meta($id, $prefix . $field, true);
+							echo apply_filters(strtolower(__CLASS__) . '_column_data', get_post_meta($id, $prefix . $field, true), $id, $column_name);
 						}
 					}
 				}

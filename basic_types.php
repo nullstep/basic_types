@@ -616,6 +616,7 @@ class BT {
 				}
 			}
 		}
+
 		return $parent_file;
 	}
 
@@ -758,6 +759,67 @@ class BT {
 				vertical-align: middle;
 				margin-top: 10px;
 			}
+			#<?php echo $idp; ?>_meta_box .mcw {
+				padding-top: 6px;
+				margin-bottom: 8px;
+			}
+			#<?php echo $idp; ?>_meta_box .mcw .label {
+				display: inline-block;
+				padding: 10px 15px 0 5px;
+			}
+			#<?php echo $idp; ?>_meta_box .mcw .mc {
+				appearance: none;
+				background-color: #dfe1e4;
+				border-radius: 72px;
+				border-style: none;
+				flex-shrink: 0;
+				height: 20px;
+				margin: -2px 0 0 0;
+				position: relative;
+				width: 30px;
+			}
+			#<?php echo $idp; ?>_meta_box .mcw .mc::before {
+				bottom: -6px;
+				content: "";
+				left: -6px;
+				position: absolute;
+				right: -6px;
+				top: -6px;
+			}
+			#<?php echo $idp; ?>_meta_box .mcw .mc,
+			#<?php echo $idp; ?>_meta_box .mcw .mc::after {
+				transition: all 100ms ease-out;
+			}
+			#<?php echo $idp; ?>_meta_box .mcw .mc::after {
+				background-color: #fff;
+				border-radius: 50%;
+				content: "";
+				height: 14px;
+				left: 3px;
+				position: absolute;
+				top: 3px;
+				width: 14px;
+			}
+			#<?php echo $idp; ?>_meta_box .mcw input[type=checkbox] {
+				cursor: default;
+			}
+			#<?php echo $idp; ?>_meta_box .mcw .mc:hover {
+				background-color: #c9cbcd;
+				transition-duration: 0s;
+			}
+			#<?php echo $idp; ?>_meta_box .mcw .mc:checked {
+				background-color: var(--admin-highlight, #2271b1);
+			}
+			#<?php echo $idp; ?>_meta_box .mcw .mc:checked::after {
+				background-color: #fff;
+				left: 13px;
+			}
+			#<?php echo $idp; ?>_meta_box .mcw :focus:not(.focus-visible) {
+				outline: 0;
+			}
+			#<?php echo $idp; ?>_meta_box .mcw .mc:checked:hover {
+				background-color: var(--admin-highlight, #2271b1);
+			}
 			#<?php echo $idp; ?>_meta_box input[type=radio] {
 				margin-right: 20px;
 				width: 20px;
@@ -876,7 +938,7 @@ class BT {
 			$fname = '_' . self::$def['prefix'] . '_' . $type . '_' . $field;
 			$fval = $field_values[$field];
 
-			if ($keys['linked']) {
+			if (!empty($keys['linked'])) {
 				// this is a linked id field
 
 				if ($keys['type'] == 'view') {
@@ -1016,6 +1078,32 @@ class BT {
 									echo '<option value="' . $value . '"' . $selected . '>' . $label . '</option>';
 								}
 							echo '</select>';
+						break;
+					}
+					case 'multi': {
+							echo '<em>' . $keys['label'] . ':</em>';
+							echo '<span class="desc">' . $keys['description'] . '</span>';
+						echo '</div>';
+						echo '<div class="field-edit">';
+							echo '<input type="hidden" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
+							echo '<div class="mcw">';
+							$farray = explode(',', $fval);
+							foreach ($keys['values'] as $value => $label) {
+								$checked = (in_array($value, $farray)) ? ' checked' : '';
+								echo '<input type="checkbox" class="mc check-' . $fid . '" data-val="' . $value . '"' . $checked . '>';
+								echo '<span class="label">' . $label . '</span>';
+								echo (!empty($keys['row'])) ? '' : '<br>';
+							}
+							echo '</div>';
+							echo '<script>';
+								echo '$(".check-' . $fid . '").on("change", function() {';
+									echo 'var v' . $fid . ' = [];';
+									echo '$(".check-' . $fid . ':checked").each(function(i, v){';
+										echo 'v' . $fid . '.push($(v).data("val"));';
+									echo '});';
+									echo '$("#' . $fid . '").val(v' . $fid . '.join());';
+								echo '});';
+							echo '</script>';
 						break;
 					}
 					case 'radio': {
@@ -1188,14 +1276,14 @@ class BT {
 <?php
 	}
 
-//     ▄████████     ▄████████   ▄█    █▄      ▄████████  
-//    ███    ███    ███    ███  ███    ███    ███    ███  
-//    ███    █▀     ███    ███  ███    ███    ███    █▀   
-//    ███           ███    ███  ███    ███   ▄███▄▄▄      
-//  ▀███████████  ▀███████████  ███    ███  ▀▀███▀▀▀      
-//           ███    ███    ███  ▀██    ███    ███    █▄   
-//     ▄█    ███    ███    ███   ▀██  ██▀     ███    ███  
-//   ▄████████▀     ███    █▀     ▀████▀      ██████████
+	//     ▄████████     ▄████████   ▄█    █▄      ▄████████  
+	//    ███    ███    ███    ███  ███    ███    ███    ███  
+	//    ███    █▀     ███    ███  ███    ███    ███    █▀   
+	//    ███           ███    ███  ███    ███   ▄███▄▄▄      
+	//  ▀███████████  ▀███████████  ███    ███  ▀▀███▀▀▀      
+	//           ███    ███    ███  ▀██    ███    ███    █▄   
+	//     ▄█    ███    ███    ███   ▀██  ██▀     ███    ███  
+	//   ▄████████▀     ███    █▀     ▀████▀      ██████████
 
 	function save_postdata($post_id) {
 		$post = get_post($post_id);
@@ -1219,14 +1307,14 @@ class BT {
 		}
 	}
 
-//   ▄█    █▄    ▄█      ▄████████   ▄█     █▄      ▄████████  
-//  ███    ███  ███     ███    ███  ███     ███    ███    ███  
-//  ███    ███  ███▌    ███    █▀   ███     ███    ███    █▀   
-//  ███    ███  ███▌   ▄███▄▄▄      ███     ███    ███         
-//  ███    ███  ███▌  ▀▀███▀▀▀      ███     ███  ▀███████████  
-//  ▀██    ███  ███     ███    █▄   ███     ███           ███  
-//   ▀██  ██▀   ███     ███    ███  ███ ▄█▄ ███     ▄█    ███  
-//    ▀████▀    █▀      ██████████   ▀███▀███▀    ▄████████▀
+	//   ▄█    █▄    ▄█      ▄████████   ▄█     █▄      ▄████████  
+	//  ███    ███  ███     ███    ███  ███     ███    ███    ███  
+	//  ███    ███  ███▌    ███    █▀   ███     ███    ███    █▀   
+	//  ███    ███  ███▌   ▄███▄▄▄      ███     ███    ███         
+	//  ███    ███  ███▌  ▀▀███▀▀▀      ███     ███  ▀███████████  
+	//  ▀██    ███  ███     ███    █▄   ███     ███           ███  
+	//   ▀██  ██▀   ███     ███    ███  ███ ▄█▄ ███     ▄█    ███  
+	//    ▀████▀    █▀      ██████████   ▀███▀███▀    ▄████████▀
 
 	function posts_custom_column_views($column_name, $id) {
 		$type = get_post_type($id);
@@ -1235,7 +1323,7 @@ class BT {
 		if (isset(self::$posts[$type])) {
 
 			foreach (self::$posts[$type] as $field => $keys) {
-				if (($field == $column_name) && $keys['column']) {
+				if (($field == $column_name) && !empty($keys['column'])) {
 					switch ($keys['type']) {
 						case 'check': {
 							$yes = '<svg fill="#000000" height="18px" width="18px" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 490 490"><polygon points="452.253,28.326 197.831,394.674 29.044,256.875 0,292.469 207.253,461.674 490,54.528 "></polygon></svg>';
@@ -1314,8 +1402,6 @@ class BT {
 //    ███    ██▄  ███    ███  ███    ███      ███      
 //    ███    ███  ███    ███  ███    ███      ███      
 //  ▄█████████▀    ▀██████▀    ▀██████▀      ▄████▀
-
-
 
 add_action('init', 'BT::init');
 add_action('rest_api_init', 'BT::api_init');

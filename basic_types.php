@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 1.2.0
+ * Version: 1.2.1
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -1414,6 +1414,9 @@ if (!class_exists('WPU')) {
 		private $authorize_token;
 		private $github_response;
 
+		public $requires;
+		public $tested;
+
 		public function __construct($file) {
 			$this->file = $file;
 			add_action('admin_init', [$this, 'set_plugin_properties']);
@@ -1518,8 +1521,8 @@ if (!class_exists('WPU')) {
 					$plugin = [
 						'name' => $this->plugin['Name'],
 						'slug' => $this->basename,
-						'requires' => '6.2',
-						'tested' => '6.4.3',
+						'requires' => $this->$requires ?? '6.3',
+						'tested' => $this->$tested ?? '6.4.3',
 						'version' => $this->github_response['tag_name'],
 						'author' => $this->plugin['AuthorName'],
 						'author_profile' => $this->plugin['AuthorURI'],
@@ -1566,8 +1569,12 @@ if (!class_exists('WPU')) {
 //    ███    ███  ███    ███  ███    ███      ███      
 //  ▄█████████▀    ▀██████▀    ▀██████▀      ▄████▀
 
+// init updater
+
 if (get_option('auth_key') !== '') {
 	$updater = new WPU(__FILE__);
+	$updater->$requires = '6.4';
+	$updater->$tested = '6.4.3';
 	$updater->set_username('nullstep');
 	$updater->set_repository('basic_types');
 	$updater->authorize(get_option('auth_key'));

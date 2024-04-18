@@ -155,6 +155,15 @@ class BT {
 
 		if (is_admin()) {
 			self::init_menu();
+
+			if (get_option('auth_key') !== '') {
+				$updater = new WPU(__FILE__);
+				$updater->set_versions('6.4', '6.4.3');
+				$updater->set_username('nullstep');
+				$updater->set_repository('basic_types');
+				$updater->authorize(get_option('auth_key'));
+				$updater->initialize();
+			}
 		}
 
 		// register post types
@@ -1493,7 +1502,12 @@ if (!class_exists('WPU')) {
 				if ($checked = $transient->checked) {
 					$this->get_repository_info();
 
-					$out_of_date = version_compare($this->github_response['tag_name'], $checked[$this->basename], 'gt');
+					if (isset($this->github_response['tag_name'])) {
+						$out_of_date = version_compare($this->github_response['tag_name'], $checked[$this->basename], 'gt');
+					}
+					else {
+						$out_of_date = false;
+					}
 
 					if ($out_of_date) {
 						$new_files = $this->github_response['zipball_url'];
@@ -1573,17 +1587,6 @@ if (!class_exists('WPU')) {
 //    ███    ██▄  ███    ███  ███    ███      ███      
 //    ███    ███  ███    ███  ███    ███      ███      
 //  ▄█████████▀    ▀██████▀    ▀██████▀      ▄████▀
-
-// init updater
-
-if (get_option('auth_key') !== '') {
-	$updater = new WPU(__FILE__);
-	$updater->set_versions('6.4', '6.4.3');
-	$updater->set_username('nullstep');
-	$updater->set_repository('basic_types');
-	$updater->authorize(get_option('auth_key'));
-	$updater->initialize();
-}
 
 add_action('init', 'BT::init');
 add_action('rest_api_init', 'BT::api_init');

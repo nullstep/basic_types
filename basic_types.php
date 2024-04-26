@@ -240,6 +240,8 @@ class BT {
 					'query_var' => true,
 					'rewrite' => ['slug' => $tax],
 				]);
+
+				register_taxonomy_for_object_type($tax, $type);
 			}
 		}
 

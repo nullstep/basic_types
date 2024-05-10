@@ -6,12 +6,12 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 1.2.2
+ * Version: 1.3.0
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
 
-define('_DEVUSER', 'admin');
+define('_DEVUSER', ['admin']);
 
 class BT {
 	public static $message = null;
@@ -194,7 +194,8 @@ class BT {
 
 				register_post_type($type, [
 					'supports' => [
-						'title'
+						'title',
+						'revisions'
 					],
 					'hierarchical' => true,
 					'labels' => $labels,
@@ -210,7 +211,12 @@ class BT {
 		// register taxonomies
 
 		if (self::check(self::$taxes)) {
-			foreach (self::$taxes as $tax => $type) {
+			foreach (self::$taxes as $tax => $data) {
+				add_action($tax . '_edit_form_fields', __CLASS__ . '::edit_form_fields', 10, 2);
+				add_action($tax . '_add_form_fields', __CLASS__ . '::edit_form_fields', 10, 2);
+				add_action('edited_' . $tax, __CLASS__ . '::save_form_fields', 10, 3);
+				add_action('created_' . $tax, __CLASS__ . '::save_form_fields', 10, 3);
+
 				$uc_tax = ucwords(str_replace('_', ' ', $tax));
 				$p_tax = self::plural($uc_tax);
 
@@ -230,8 +236,10 @@ class BT {
 					'no_terms' => 'No ' . $p_tax
 				];
 
-				register_taxonomy($tax, $type, [
-					'hierarchical' => true,
+				$hierarchical = (isset($data['hierarchical'])) ? $data['hierarchical'] : true;
+
+				register_taxonomy($tax, $data['types'], [
+					'hierarchical' => $hierarchical,
 					'labels' => $labels,
 					'show_ui' => true,
 					'show_in_menu' => false,
@@ -240,6 +248,10 @@ class BT {
 					'query_var' => true,
 					'rewrite' => ['slug' => $tax],
 				]);
+
+				foreach ($data['types'] as $type) {
+					register_taxonomy_for_object_type($tax, $type);
+				}
 			}
 		}
 
@@ -641,7 +653,7 @@ class BT {
 	public static function is_dev() {
 		$user = wp_get_current_user();
 
-		return ($user->user_login == _DEVUSER) ? true : false;
+		return (in_array($user->user_login, _DEVUSER)) ? true : false;
 	}
 
 	// check our variable meets certain conditions
@@ -669,6 +681,10 @@ class BT {
 				break;
 			}
 			case 'h': {
+				$plural = $string . 'es';
+				break;
+			}
+			case 's': {
 				$plural = $string . 'es';
 				break;
 			}
@@ -1400,6 +1416,83 @@ class BT {
 			}
 		}
 		return $columns;
+	}
+
+	//      ███         ▄████████  ▀████    ▐████▀  
+	//  ▀█████████▄    ███    ███    ███▌   ████▀   
+	//     ▀███▀▀██    ███    ███     ███  ▐███     
+	//      ███   ▀    ███    ███     ▀███▄███▀     
+	//      ███      ▀███████████     ████▀██▄      
+	//      ███        ███    ███    ▐███  ▀███     
+	//      ███        ███    ███   ▄███     ███▄   
+	//     ▄████▀      ███    █▀   ████       ███▄
+
+	public static function edit_form_fields($term) {
+		$taxonomy = ($term->taxonomy) ?? $term;
+
+		if (isset(self::$taxes[$taxonomy])) {
+			$fields = (isset(self::$taxes[$taxonomy]['fields'])) ? self::$taxes[$taxonomy]['fields'] : null;
+
+			if ($fields) {
+    			foreach ($fields as $field => $data) {
+    
+    				if (is_string($term)) {
+    					$value = $data['default'];
+?>
+    					<div class="form-field term-<?php echo $term; ?>-wrap">
+    						<label for="<?php echo $field; ?>"><?php echo $data['label']; ?></label>
+    						<input type="text" id="<?php echo $field; ?>" name="<?php echo $field; ?>" value="<?php echo $value; ?>">
+    						<p id="<?php echo $field; ?>-description"><?php echo $data['description']; ?></p>
+    					</div>
+<?php
+    				}
+    				else {
+    					$value = get_term_meta($term->term_id, $field, true);
+?>
+    					<tr class="form-field">
+    						<th valign="top" scope="row">
+    							<label for="<?php echo $field; ?>"><?php echo $data['label']; ?></label>
+    						</th>
+    						<td>
+    							<input type="text" id="<?php echo $field; ?>" name="<?php echo $field; ?>" value="<?php echo $value; ?>">
+    							<p class="description" id="<?php echo $field; ?>-description"><?php echo $data['description']; ?></p>
+    						</td>
+    					</tr>
+<?php
+    				}
+    			}
+			}
+			
+			$description = (isset(self::$taxes[$taxonomy]['description'])) ? self::$taxes[$taxonomy]['description'] : true;
+
+			if (!$description) {
+?>
+	<style>
+		.term-description-wrap { display: none; }
+	</style>
+<?php
+			}
+		}
+	}
+
+	public static function save_form_fields($term_id, $tt_id, $taxonomy) {
+		if (isset(self::$taxes[$taxonomy['taxonomy']])) {
+			$fields = (isset(self::$taxes[$taxonomy]['fields'])) ? self::$taxes[$taxonomy]['fields'] : null;
+
+			if ($fields) {
+    			foreach ($fields as $field => $data) {
+    				if (isset($_POST[$field])) {
+    					$value = $_POST[$field];
+    
+    					update_term_meta(
+    						$term_id,
+    						$field,
+    						sanitize_text_field($value)
+    					);
+    				}
+    			}
+			}
+		}
 	}
 }
 

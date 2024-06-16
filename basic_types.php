@@ -1388,9 +1388,9 @@ class BT {
 			return;
 		}
 
-		$type = $_GET['post_type'];
+		$type = $_GET['post_type'] ?? null;
 
-		if (isset(self::$posts[$type])) {
+		if ($type && isset(self::$posts[$type])) {
 			$orderby = $query->get('orderby');
 			$prefix = self::prefix($type);
 
@@ -1406,9 +1406,9 @@ class BT {
 	}
 
 	function set_posts_sortable_columns($columns) {
-		$type = $_GET['post_type'];
+		$type = $_GET['post_type'] ?? null;
 
-		if (isset(self::$posts[$type])) {
+		if ($type && isset(self::$posts[$type])) {
 			foreach (self::$posts[$type] as $field => $keys) {
 				if (isset($keys['column']) && isset($keys['sort'])) {
 					$columns[$field] = $field;

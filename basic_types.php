@@ -1310,7 +1310,7 @@ class BT {
 	//     ▄█    ███    ███    ███   ▀██  ██▀     ███    ███  
 	//   ▄████████▀     ███    █▀     ▀████▀      ██████████
 
-	function save_postdata($post_id) {
+	public static function save_postdata($post_id) {
 		$post = get_post($post_id);
 		$type = $post->post_type;
 
@@ -1341,7 +1341,7 @@ class BT {
 	//   ▀██  ██▀   ███     ███    ███  ███ ▄█▄ ███     ▄█    ███  
 	//    ▀████▀    █▀      ██████████   ▀███▀███▀    ▄████████▀
 
-	function posts_custom_column_views($column_name, $id) {
+	public static function posts_custom_column_views($column_name, $id) {
 		$type = get_post_type($id);
 		$prefix = self::prefix($type);
 
@@ -1365,7 +1365,7 @@ class BT {
 		}
 	}
 
-	function posts_column_views($columns) {
+	public static function posts_column_views($columns) {
 		$type = $_GET['post_type'];
 
 		if (isset(self::$posts[$type])) {
@@ -1383,7 +1383,7 @@ class BT {
 		return $columns;
 	}
 
-	function sort_custom_column_query($query) {
+	public static function sort_custom_column_query($query) {
 		if (!is_admin() || !$query->is_main_query()) {
 			return;
 		}
@@ -1405,7 +1405,7 @@ class BT {
 		}
 	}
 
-	function set_posts_sortable_columns($columns) {
+	public static function set_posts_sortable_columns($columns) {
 		$type = $_GET['post_type'] ?? null;
 
 		if ($type && isset(self::$posts[$type])) {

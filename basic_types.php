@@ -1434,33 +1434,33 @@ class BT {
 			$fields = (isset(self::$taxes[$taxonomy]['fields'])) ? self::$taxes[$taxonomy]['fields'] : null;
 
 			if ($fields) {
-    			foreach ($fields as $field => $data) {
-    
-    				if (is_string($term)) {
-    					$value = $data['default'];
+				foreach ($fields as $field => $data) {
+	
+					if (is_string($term)) {
+						$value = $data['default'];
 ?>
-    					<div class="form-field term-<?php echo $term; ?>-wrap">
-    						<label for="<?php echo $field; ?>"><?php echo $data['label']; ?></label>
-    						<input type="text" id="<?php echo $field; ?>" name="<?php echo $field; ?>" value="<?php echo $value; ?>">
-    						<p id="<?php echo $field; ?>-description"><?php echo $data['description']; ?></p>
-    					</div>
+						<div class="form-field term-<?php echo $term; ?>-wrap">
+							<label for="<?php echo $field; ?>"><?php echo $data['label']; ?></label>
+							<input type="text" id="<?php echo $field; ?>" name="<?php echo $field; ?>" value="<?php echo $value; ?>">
+							<p id="<?php echo $field; ?>-description"><?php echo $data['description']; ?></p>
+						</div>
 <?php
-    				}
-    				else {
-    					$value = get_term_meta($term->term_id, $field, true);
+					}
+					else {
+						$value = get_term_meta($term->term_id, $field, true);
 ?>
-    					<tr class="form-field">
-    						<th valign="top" scope="row">
-    							<label for="<?php echo $field; ?>"><?php echo $data['label']; ?></label>
-    						</th>
-    						<td>
-    							<input type="text" id="<?php echo $field; ?>" name="<?php echo $field; ?>" value="<?php echo $value; ?>">
-    							<p class="description" id="<?php echo $field; ?>-description"><?php echo $data['description']; ?></p>
-    						</td>
-    					</tr>
+						<tr class="form-field">
+							<th valign="top" scope="row">
+								<label for="<?php echo $field; ?>"><?php echo $data['label']; ?></label>
+							</th>
+							<td>
+								<input type="text" id="<?php echo $field; ?>" name="<?php echo $field; ?>" value="<?php echo $value; ?>">
+								<p class="description" id="<?php echo $field; ?>-description"><?php echo $data['description']; ?></p>
+							</td>
+						</tr>
 <?php
-    				}
-    			}
+					}
+				}
 			}
 			
 			$description = (isset(self::$taxes[$taxonomy]['description'])) ? self::$taxes[$taxonomy]['description'] : true;
@@ -1480,16 +1480,16 @@ class BT {
 			$fields = (isset(self::$taxes[$taxonomy]['fields'])) ? self::$taxes[$taxonomy]['fields'] : null;
 
 			if ($fields) {
-    			foreach ($fields as $field => $data) {
-    				if (isset($_POST[$field])) {
-    					$value = $_POST[$field];
-    
-    					update_term_meta(
-    						$term_id,
-    						$field,
-    						sanitize_text_field($value)
-    					);
-    				}
+				foreach ($fields as $field => $data) {
+					if (isset($_POST[$field])) {
+						$value = $_POST[$field];
+	
+						update_term_meta(
+							$term_id,
+							$field,
+							sanitize_text_field($value)
+						);
+					}
 				}
 			}
 		}

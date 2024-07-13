@@ -216,6 +216,7 @@ class BT {
 				add_action($tax . '_add_form_fields', __CLASS__ . '::edit_form_fields', 10, 2);
 				add_action('edited_' . $tax, __CLASS__ . '::save_form_fields', 10, 3);
 				add_action('created_' . $tax, __CLASS__ . '::save_form_fields', 10, 3);
+				add_action($tax . '_pre_add_form', __CLASS__ . '::pre_form_fields');
 
 				$uc_tax = ucwords(str_replace('_', ' ', $tax));
 				$p_tax = self::plural($uc_tax);
@@ -675,6 +676,10 @@ class BT {
 	// pluralise a string (possibly some missed exceptions)
 
 	public static function plural($string) {
+		$do_not = [
+			'personnel'
+		];
+
 		switch (substr($string, -1)) {
 			case 'y': {
 				$plural = rtrim($string, 'y') . 'ies';
@@ -689,7 +694,7 @@ class BT {
 				break;
 			}
 			default: {
-				$plural = $string . 's';
+				$plural = (in_array(strtolower(trim($string)), $do_not) ? $string : $string . 's');
 			}
 		}
 
@@ -1428,6 +1433,8 @@ class BT {
 	//     ▄████▀      ███    █▀   ████       ███▄
 
 	public static function edit_form_fields($term) {
+		global $pagenow;
+
 		$taxonomy = ($term->taxonomy) ?? $term;
 
 		if (isset(self::$taxes[$taxonomy])) {
@@ -1435,43 +1442,156 @@ class BT {
 
 			if ($fields) {
 				foreach ($fields as $field => $data) {
-	
+
 					if (is_string($term)) {
+						// this is a new term
+
+						if ($pagenow == 'edit-tags.php') {
+							$action = $_GET['action'] ?? 'list';
+
+							switch ($action) {
+								case 'list': {
+									echo '<style>#col-left{display:none}#col-right{width:100%}</style>';
+									break;
+								}
+								case 'new': {
+									echo '<style>#col-right{display:none}#col-left{width:100%}</style>';
+									break;									
+								}
+							}
+						}
+
 						$value = $data['default'];
-?>
-						<div class="form-field term-<?php echo $term; ?>-wrap">
-							<label for="<?php echo $field; ?>"><?php echo $data['label']; ?></label>
-							<input type="text" id="<?php echo $field; ?>" name="<?php echo $field; ?>" value="<?php echo $value; ?>">
-							<p id="<?php echo $field; ?>-description"><?php echo $data['description']; ?></p>
-						</div>
-<?php
+						echo '<div class="form-field term-' . $term . '-wrap">';
+							echo '<label for="' . $field . '">' . $data['label'] . '</label>';
+
+							switch ($data['type']) {
+								case 'input': {
+									echo '<input type="text" id="' . $field . '" name="' . $field . '" value="' . $value . '">';
+									break;
+								}
+								case 'text': {
+									echo '<textarea id="' . $field . '" name="' . $field . '" style="height:100px;">' . $value . '</textarea>';
+									break;
+								}
+								case 'select': {
+									echo '<select id="' . $field . '" name="' . $field . '">';
+										echo '<option value="">Please Select...</option>';
+
+									if (isset($data['linked'])) {
+										// is a linked select
+										$linked = $data['linked'];
+
+										$posts = get_posts([
+											'post_type' => $linked,
+											'post_status' => 'publish',
+											'posts_per_page' => '-1',
+											'orderby' => 'title',
+											'order' => 'ASC'
+										]);
+
+										if (count($posts)) {
+											foreach ($posts as $post) {
+												echo '<option value="' . $post->ID . ' "' . selected($post->ID, $value) . '>' . $post->post_title . '</option>';
+											}
+										}
+									}
+									else {
+										// use options provided
+										if (isset($data['values'])) {
+											foreach ($data['values'] as $val => $label) {
+												echo '<option value="' . $val . ' "' . selected($val, $value) . '>' . $label . '</option>';
+											}
+										}
+									}
+									
+									echo '</select>';
+									break;
+								}
+							}
+
+							echo '<p id="' . $field . '-description">' . $data['description'] . '</p>';
+						echo '</div>';
 					}
 					else {
+						// we are editing an existing term
+
+						echo '<style>#edittag{max-width:100%}</style>';
+
 						$value = get_term_meta($term->term_id, $field, true);
-?>
-						<tr class="form-field">
-							<th valign="top" scope="row">
-								<label for="<?php echo $field; ?>"><?php echo $data['label']; ?></label>
-							</th>
-							<td>
-								<input type="text" id="<?php echo $field; ?>" name="<?php echo $field; ?>" value="<?php echo $value; ?>">
-								<p class="description" id="<?php echo $field; ?>-description"><?php echo $data['description']; ?></p>
-							</td>
-						</tr>
-<?php
+						echo '<tr class="form-field">';
+							echo '<th valign="top" scope="row">';
+								echo '<label for="' . $field . '">' . $data['label'] . '</label>';
+							echo '</th>';
+							echo '<td>';
+
+								switch ($data['type']) {
+									case 'input': {
+										echo '<input type="text" id="' . $field . '" name="' . $field . '" value="' . $value . '">';
+										break;
+									}
+									case 'text': {
+										echo '<textarea id="' . $field . '" name="' . $field . '" style="height:100px;">' . $value . '</textarea>';
+										break;
+									}
+									case 'select': {
+										echo '<select id="' . $field . '" name="' . $field . '">';
+											echo '<option value="">Please Select...</option>';
+
+										if (isset($data['linked'])) {
+											// is a linked select
+											$linked = $data['linked'];
+
+											$posts = get_posts([
+												'post_type' => $linked,
+												'post_status' => 'publish',
+												'posts_per_page' => '-1',
+												'orderby' => 'title',
+												'order' => 'ASC',
+												'tax_query' => [[
+													'taxonomy' => $term->taxonomy,
+													'field' => 'term_id',
+													'terms' => $term->term_id
+												]]
+											]);
+
+											if (count($posts)) {
+												foreach ($posts as $post) {
+													echo '<option value="' . $post->ID . '"' . selected($post->ID, $value) . '>' . $post->post_title . '</option>';
+												}
+											}
+										}
+										else {
+											// use options provided
+											if (isset($data['values'])) {
+												foreach ($data['values'] as $val => $label) {
+													echo '<option value="' . $val . ' "' . selected($val, $value) . '>' . $label . '</option>';
+												}
+											}
+										}
+											echo '</select>';
+										break;
+									}
+								}
+
+								echo '<p class="description" id="' . $field . '-description">' . $data['description'] . '</p>';
+							echo '</td>';
+						echo '</tr>';
 					}
 				}
 			}
 			
 			$description = (isset(self::$taxes[$taxonomy]['description'])) ? self::$taxes[$taxonomy]['description'] : true;
+			$slug = (isset(self::$taxes[$taxonomy]['slug'])) ? self::$taxes[$taxonomy]['slug'] : true;
 
 			if (!$description) {
-?>
-	<style>
-		.term-description-wrap { display: none; }
-	</style>
-<?php
+				echo '<style>.term-description-wrap{display:none;}</style>';
 			}
+			if (!$slug) {
+				echo '<style>.term-slug-wrap{display:none;}</style>';
+			}
+
+			echo '<script>jQuery(function($){$("#name-description").text("Display name of this ' . strtolower(str_replace('_', ' ', $taxonomy)) . '.");$("#slug-description").text("URL-friendly version of the name.");$("#parent-description").text("Assign a parent to create a hierarchy.");});</script>';
 		}
 	}
 
@@ -1491,6 +1611,20 @@ class BT {
 						);
 					}
 				}
+			}
+		}
+	}
+
+	// add 'new' button to custom taxonomy list page
+
+	public static function pre_form_fields($taxonomy) {
+		$screen = get_current_screen();
+		$action = $_GET['action'] ?? 'list';
+
+		if ($screen->base == 'edit-tags' && $action != 'new') {
+			if ($taxonomy && isset(BT::$taxes[$taxonomy])) {
+				$button = " <a class='page-title-action' href='/wp-admin/edit-tags.php?taxonomy=" . $taxonomy . "&action=new'>Add New</a>";
+				echo '<script>jQuery(function($){$("h1.wp-heading-inline").after("' . $button . '");});</script>';
 			}
 		}
 	}

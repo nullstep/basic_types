@@ -398,9 +398,23 @@ class BT {
 				}
 			}
 		}
-		update_option(self::$def['plugin'] . '-settings', $settings);
 
-		return rest_ensure_response(self::get_settings());
+		$ok = true;
+
+		foreach (['bt_posts', 'bt_taxes', 'bt_roles'] as $json) {
+			if ($settings[$json] == 'null') {
+				$ok = false;
+			}
+		}
+
+		if ($ok) {
+			update_option(self::$def['plugin'] . '-settings', $settings);
+
+			return rest_ensure_response(self::get_settings());
+		}
+		else {
+			return rest_ensure_response(['error' => 'JSON formatting error, not saved.']);
+		}
 	}
 
 	//    ▄▄▄▄███▄▄▄▄       ▄████████  ███▄▄▄▄▄    ███    █▄   
@@ -1093,6 +1107,9 @@ class BT {
 
 				echo '<div class="field-title">';
 
+				$default = $keys['default'] ?? '';
+				$height = $keys['height'] ?? null;
+
 				switch ($keys['type']) {
 					case 'select': {
 							echo '<label for="' . $fid . '">';
@@ -1201,13 +1218,14 @@ class BT {
 						break;
 					}
 					case 'content': {
+							$height = ($height) ? 'height:' . $height : '';
 							echo '<label for="' . $fid . '">';
 								echo $keys['label'] . ':';
 							echo '</label>';
 							echo '<span class="desc">' . $keys['description'] . '</span>';
 						echo '</div>';
 						echo '<div class="field-edit">';
-							echo '<div style="width:100%;display:inline-block">';
+							echo '<div style="width:100%;display:inline-block' . $height . '">';
 								wp_editor($fval, $fid, [
 									'media_buttons' => $keys['media'],
 									'textarea_name' => $fname
@@ -1233,11 +1251,14 @@ class BT {
 							echo '<span class="desc">' . $keys['description'] . '</span>';
 						echo '</div>';
 						echo '<div class="field-edit">';
-							echo '<input id="' . $fid . '" type="text" name="' . $fname . '">';
-							echo '<input id="colour-' . $fid . '" data-id="' . $fid . '" type="color" class="choose-colour-button" value="' . $fval . '">';
+							echo '<input id="' . $fid . '" type="text" name="' . $fname . '" style="width:94.5%" value="' . $fval . '">';
+							echo '<input id="colour-' . $fid . '" data-id="' . $fid . '" type="color" class="choose-colour-button" value="' . $fval . '" style="width:5%;height:36px">';
 							echo '<script>';
+								echo '$("#colour-' . $fid . '").on("change", function() {';
+									echo '$("#' . $fid . '").val($(this).val());';
+								echo '});';
 								echo '$("#' . $fid . '").on("change", function() {';
-									echo '$("#colour-' . $fid . '").val($("#' . $fid . '").val());';
+									echo '$("#colour-' . $fid . '").val($(this).val());';
 								echo '});';
 							echo '</script>';
 						break;

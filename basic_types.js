@@ -171,13 +171,18 @@ jQuery(function($) {
 			data: data
 		})
 		.then(function(r) {
-			$('#' + id + '-feedback').html('<p>' + plugin.strings.saved + '</p>').show().delay(3000).fadeOut();
+			if (r.hasOwnProperty('error')) {
+				$('#' + id + '-feedback').html('<p>' + r['error'] + '</p>').show().delay(3000).fadeOut();
+			}
+			else {
+				$('#' + id + '-feedback').html('<p>' + plugin.strings.saved + '</p>').show().delay(3000).fadeOut();
+				fields.forEach(function(item, index) {
+					if (r.hasOwnProperty(item)) {
+						$('#' + item).val(r[item]);
+					}
+				});
+			}
 			$('#submit').removeAttr('disabled');
-			fields.forEach(function(item, index) {
-				if (r.hasOwnProperty(item)) {
-					$('#' + item).val(r[item]);
-				}
-			});
 		})
 		.fail(function(r) {
 			var message = plugin.strings.error;
@@ -214,6 +219,10 @@ jQuery(function($) {
 		});
 		mediaUploader.open();
 	});
+	// $('.choose-colour-button').on('change', function() {
+	// 	bid = '#' + $(this).data('id');
+	// 	$(bid).val($(this).val());
+	// });
 });
 
 // eof

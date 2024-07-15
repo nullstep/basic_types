@@ -194,8 +194,7 @@ class BT {
 
 				register_post_type($type, [
 					'supports' => [
-						'title',
-						'revisions'
+						'title'
 					],
 					'hierarchical' => true,
 					'labels' => $labels,

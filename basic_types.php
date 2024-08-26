@@ -215,11 +215,13 @@ class BT {
 
 		if (self::check(self::$taxes)) {
 			foreach (self::$taxes as $tax => $data) {
-				add_action($tax . '_edit_form_fields', __CLASS__ . '::edit_form_fields', 10, 2);
-				add_action($tax . '_add_form_fields', __CLASS__ . '::edit_form_fields', 10, 2);
-				add_action('edited_' . $tax, __CLASS__ . '::save_form_fields', 10, 3);
-				add_action('created_' . $tax, __CLASS__ . '::save_form_fields', 10, 3);
+				add_action($tax . '_edit_form_fields', __CLASS__ . '::edit_taxonomy_fields', 10, 2);
+				add_action($tax . '_add_form_fields', __CLASS__ . '::edit_taxonomy_fields', 10, 2);
+				add_action('edited_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
+				add_action('created_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
 				add_action($tax . '_pre_add_form', __CLASS__ . '::pre_form_fields');
+				add_filter('manage_edit_' . $tax . '_columns', __CLASS__ . '::taxonomy_custom_columns');
+				add_action('manage_' . $tax . '_custom_column', __CLASS__ . '::taxonomy_custom_column_views', 10, 3);
 
 				$uc_tax = ucwords(str_replace('_', ' ', $tax));
 				$p_tax = self::plural($uc_tax);
@@ -635,6 +637,7 @@ class BT {
 			return;
 		}
 
+		wp_enqueue_style('fa', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css');
 		wp_enqueue_code_editor(['type' => 'application/x-httpd-php']);
 	}
 
@@ -734,6 +737,593 @@ class BT {
 		return '_' . self::$def['prefix'] . '_' . $type . '_';
 	}
 
+	//    ▄▄▄▄███▄▄▄▄       ▄████████      ███         ▄████████  
+	//  ▄██▀▀▀███▀▀▀██▄    ███    ███  ▀█████████▄    ███    ███  
+	//  ███   ███   ███    ███    █▀      ▀███▀▀██    ███    ███  
+	//  ███   ███   ███   ▄███▄▄▄          ███   ▀    ███    ███  
+	//  ███   ███   ███  ▀▀███▀▀▀          ███      ▀███████████  
+	//  ███   ███   ███    ███    █▄       ███        ███    ███  
+	//  ███   ███   ███    ███    ███      ███        ███    ███  
+	//   ▀█   ███   █▀     ██████████     ▄████▀      ███    █▀
+
+	public static function gen_css() {
+		$idp = strtolower(self::$def['prefix']);
+?>
+		<style>
+			#<?php echo $idp; ?>_meta_box {
+				position: relative;
+
+				& .field-title {
+					position: absolute;
+					display: inline-block;
+					width: 18%;
+				}
+				& .field-edit {
+					display: inline-block;
+					margin-left: 20%;
+					margin-bottom: 10px;
+					width: 80%;
+				}
+				& em, label {
+					display: inline-block;
+					font-weight: 700;
+					font-style: normal;
+					padding-top: 4px;
+				}
+				& input, select, textarea {
+					box-sizing: border-box;
+					display: inline-block;
+					padding: 3px;
+					vertical-align: middle;
+					margin-top: 10px;
+				}
+				& .mcw {
+					padding-top: 6px;
+					margin-bottom: 8px;
+				}
+				& .mcw .label {
+					display: inline-block;
+					padding: 10px 15px 0 5px;
+				}
+				& .mcw .mc {
+					appearance: none;
+					background-color: #dfe1e4;
+					border-radius: 72px;
+					border-style: none;
+					flex-shrink: 0;
+					height: 20px;
+					margin: -2px 0 0 0;
+					position: relative;
+					width: 30px;
+				}
+				& .mcw .mc::before {
+					bottom: -6px;
+					content: "";
+					left: -6px;
+					position: absolute;
+					right: -6px;
+					top: -6px;
+				}
+				& .mcw .mc, .mcw .mc::after {
+					transition: all 100ms ease-out;
+				}
+				& .mcw .mc::after {
+					background-color: #fff;
+					border-radius: 50%;
+					content: "";
+					height: 14px;
+					left: 3px;
+					position: absolute;
+					top: 3px;
+					width: 14px;
+				}
+				& .mcw input[type=checkbox] {
+					cursor: default;
+				}
+				& .mcw .mc:hover {
+					background-color: #c9cbcd;
+					transition-duration: 0s;
+				}
+				& .mcw .mc:checked {
+					background-color: var(--admin-highlight, #2271b1);
+				}
+				& .mcw .mc:checked::after {
+					background-color: #fff;
+					left: 13px;
+				}
+				& .mcw :focus:not(.focus-visible) {
+					outline: 0;
+				}
+				& .mcw .mc:checked:hover {
+					background-color: var(--admin-highlight, #2271b1);
+				}
+				& input[type=radio] {
+					margin-right: 20px;
+					width: 20px;
+					height: 20px;
+					margin-top: -4px;
+					appearance: none;
+					background-color: #fff;
+				}
+				& input[type=radio]:checked::before, input[type=radio]:checked {
+					background-color: var(--admin-highlight, #2271b1);
+					border: 2px solid var(--admin-highlight, #2271b1);
+				}
+				& span.desc {
+					display: block;
+					padding-top: 0px;
+					font-style: italic;
+					font-size: 12px;
+				}
+				& div.middle {
+					position: relative;
+					margin-bottom: 10px;
+					padding-bottom: 10px;
+					border-bottom: 1px dashed #ddd;
+				}
+				& div.top {
+					position: relative;
+					margin-top: 10px;
+					margin-bottom: 10px;
+					padding-bottom: 10px;
+					border-bottom: 1px dashed #ddd;
+				}
+				& div.bottom {
+					position: relative;
+					margin-bottom: 0;
+					padding-bottom: 0;
+					border-bottom: 0;
+				}
+				& .switch {
+					position: relative;
+					display: inline-block;
+					width: 50px;
+					height: 24px;
+					margin: 3px 0;
+				}
+				& .switch input {
+					opacity: 0;
+					width: 0;
+					height: 0;
+				}
+				& .slider {
+					position: absolute;
+					cursor: pointer;
+					top: 0;
+					left: 0;
+					right: 0;
+					bottom: 0;
+					background-color: #ccc;
+					transition: .4s;
+					border-radius: 24px;
+				}
+				& .slider:before {
+					position: absolute;
+					content: "";
+					height: 20px;
+					width: 20px;
+					left: 4px;
+					bottom: 4px;
+					background-color: white;
+					transition: .4s;
+					border-radius: 50%;
+				}
+				& input:checked + .slider {
+					background-color: var(--admin-highlight, #2271b1);
+				}
+				& input:focus + .slider {
+					box-shadow: 0 0 1px var(--admin-highlight, #2271b1);
+				}
+				& input:checked + .slider:before {
+					transform: translateX(22px);
+				}
+				& .bt_data-view {
+					display: inline-block;
+					width: 73%;
+					padding: 3px;
+					margin-top: 10px;
+				}
+				& .choose-colour-button {
+					margin-top: 9px;
+					height: 37px;
+				}
+				& .choose-file-button {
+					position: relative;
+					top: 7px;
+					margin-right: 1px;
+					height: 37px;
+				}
+				& .view-file-button {
+					position: relative;
+					top: 7px;
+					margin-left: 1px;
+					height: 37px;
+				}
+			}
+			p.search-box,
+			.term-name-wrap,
+			.term-slug-wrap,
+			.term-parent-wrap,
+			.term-description-wrap,
+			p.submit,
+			table.form-table,
+			.edit-tag-actions {
+				display: none;
+			}
+		</style>
+<?php
+	}
+
+	public static function gen_js() {
+?>
+		<script>
+			$(function(){
+				var mediaUploader, bid;
+				$('.choose-file-button').on('click', function(e) {
+					bid = '#' + $(this).data('id');
+					e.preventDefault();
+					if (mediaUploader) {
+						mediaUploader.open();
+						return;
+					}
+					mediaUploader = wp.media.frames.file_frame = wp.media({
+						title: 'Choose File',
+						button: {
+							text: 'Choose File'
+						}, multiple: false
+					});
+					wp.media.frame.on('open', function() {
+						if (wp.media.frame.content.get() !== null) {          
+							wp.media.frame.content.get().collection._requery(true);
+							wp.media.frame.content.get().options.selection.reset();
+						}
+					}, this);
+					mediaUploader.on('select', function() {
+						var attachment = mediaUploader.state().get('selection').first().toJSON();
+						$(bid).val(attachment.url.split('/').pop());
+					});
+					mediaUploader.open();
+				});
+			});
+		</script>
+<?php
+	}
+
+	public static function gen_fields($what, $type, $field, $fval, $keys) {
+		$fid = self::$def['prefix'] . '_' . $type . '_' . $field;
+		$fname = self::prefix($type) . $field;
+
+		if (!empty($keys['linked'])) {
+			// this is a linked id field
+
+			if ($keys['type'] == 'view') {
+				// this is a view linked records field
+
+				echo '<div class="field-title">';
+					echo '<label>' . $keys['label'] . ':</label>';
+					echo '<span class="desc">' . $keys['description'] . '</span>';
+				echo '</div>';
+
+				echo '<div class="field-edit">';
+
+				if ($keys['linked'] == 'user') {
+					// view all linked users
+
+					$roles = (strpos($keys['role'], ',') === true) ? explode(',', $keys['role']) : [$keys['role']];
+					$role = (isset($keys['role'])) ? ['role__in' => $roles] : null;
+					$users = get_users($role);
+
+					if (count($users)) {
+						foreach ($users as $user) {
+							echo '<div id="user-' . $user->ID . '" class="bt_data-view">' . $user->display_name . '</div>';
+						}
+					}
+					else {
+						echo '<div id="user-none" class="bt_data-view">No data to view</div>';
+					}
+				}
+				else {
+					// view all linked records of 'type'
+
+					$loop = get_posts([
+						'post_type' => $keys['linked'],
+						'post_status' => 'publish',
+						'posts_per_page' => '-1',
+						'orderby' => 'title',
+						'order' => 'ASC'
+					]);
+
+					if (count($loop) > 0) {
+						foreach ($loop as $post) {
+							if ($post->post_title != 'Auto Draft') {
+								echo '<div value="' . $keys['linked'] . '-' . $post->ID . '">' . $post->post_title . '</div>';
+							}
+						}
+					}
+				}
+
+				echo '</div>';
+			}
+			else {
+				// this is a standard linked record field
+?>
+				<input type="hidden" id="<?php echo $fid; ?>" name="<?php echo $fname; ?>" value="<?php echo $fval; ?>">
+<?php
+				if ($keys['type'] == 'select') {
+					// this field needs a select box
+?>
+				<div class="field-title">
+					<label><?php echo $keys['label']; ?>:</label>
+					<span class="desc"><?php echo $keys['description']; ?></span>
+				</div>
+
+				<div class="field-edit">
+
+					<select id="<?php echo self::$def['prefix']; ?>-<?php echo $keys['linked']; ?>" style="width:99%">
+						<option value="">Select <?php echo ucwords(str_replace('_', ' ', $keys['linked'])); ?>&hellip;</option>
+<?php
+					if ($keys['linked'] == 'user') {
+						// list all linked users
+
+						$roles = (strpos($keys['role'], ',') === true) ? explode(',', $keys['role']) : [$keys['role']];
+						$role = (isset($keys['role'])) ? ['role__in' => $roles] : null;
+						$users = get_users($role);
+
+						if (count($users)) {
+							foreach ($users as $user) {
+								$id = $user->ID;
+								$selected = ($id == $fval) ? ' selected' : '';
+								echo '<option value="' . $id . '"' . $selected . '>' . $user->display_name . '</option>';
+							}
+						}
+					}
+					else {
+						// list all linked records of 'type'
+
+						$loop = get_posts([
+							'post_type' => $keys['linked'],
+							'post_status' => 'publish',
+							'posts_per_page' => '-1',
+							'orderby' => 'title',
+							'order' => 'ASC'
+						]);
+
+						if (count($loop) > 0) {
+							foreach ($loop as $post) {
+								$id = $post->ID;
+								$selected = ($id == $fval) ? ' selected' : '';
+								if ($post->post_title != 'Auto Draft') {
+									echo '<option value="' . $id . '"' . $selected . '>' . $post->post_title . '</option>';
+								}
+							}
+						}
+					}
+?>
+					</select>
+				</div>
+
+				<script>
+					var <?php echo $field; ?>_select = $('#<?php echo self::$def['prefix']; ?>-<?php echo $keys['linked']; ?>');
+					var <?php echo $field; ?>_input = $('#<?php echo self::$def['prefix']; ?>_<?php echo $type; ?>_<?php echo $field; ?>');
+					<?php echo $field; ?>_select.on('change', function() {
+						<?php echo $field; ?>_input.val($(this).val());
+					});
+				</script>
+<?php
+				}
+			}
+		}
+		else {
+			// this is a data field
+
+			echo '<div class="field-title">';
+
+			switch ($keys['type']) {
+				case 'select': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<select id="' . $fid . '" name="' . $fname . '" style="width:99%">';
+							echo '<option value="">Select ' . $keys['label'] . '&hellip;</option>';
+							foreach ($keys['values'] as $value => $label) {
+								$selected = ($fval == $value) ? ' selected' : '';
+								echo '<option value="' . $value . '"' . $selected . '>' . $label . '</option>';
+							}
+						echo '</select>';
+					break;
+				}
+				case 'multi': {
+						echo '<em>' . $keys['label'] . ':</em>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="hidden" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
+						echo '<div class="mcw">';
+						$farray = explode(',', $fval);
+						foreach ($keys['values'] as $value => $label) {
+							$checked = (in_array($value, $farray)) ? ' checked' : '';
+							echo '<input type="checkbox" class="mc check-' . $fid . '" data-val="' . $value . '"' . $checked . '>';
+							echo '<span class="label">' . $label . '</span>';
+							echo (!empty($keys['row'])) ? '' : '<br>';
+						}
+						echo '</div>';
+						echo '<script>';
+							echo '$(".check-' . $fid . '").on("change", function() {';
+								echo 'var v' . $fid . ' = [];';
+								echo '$(".check-' . $fid . ':checked").each(function(i, v){';
+									echo 'v' . $fid . '.push($(v).data("val"));';
+								echo '});';
+								echo '$("#' . $fid . '").val(v' . $fid . '.join());';
+							echo '});';
+						echo '</script>';
+					break;
+				}
+				case 'radio': {
+					echo '<em>';
+						echo $keys['label'] . ':';
+					echo '</em>';
+					foreach ($keys['values'] as $value => $label) {
+						$checked = ($fval == $value) ? ' checked' : '';
+						echo '<div style="display:inline-block;margin:14px 0 14px 0">';
+							echo '<span class="label">' . $label . '</span>';
+							echo '<input type="radio" name="' . $fname . '" value="' . $value . '"' . $checked . '>';
+						echo '</div>';
+					}
+					break;
+				}
+				case 'input': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+					break;
+				}
+				case 'email': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+					break;
+				}
+				case 'website': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+					break;
+				}
+				case 'display': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" readonly style="width:99%">';
+					break;
+				}
+				case 'date': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="date" id="' . $fid . '" class="date" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+					break;
+				}
+				case 'text': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					$height = (isset($keys['height'])) ? ';height:' . $keys['height'] . '"' : '';
+					echo '<div class="field-edit">';
+						echo '<textarea id="' . $fid . '" class="tabs" name="' . $fname . '" style="width:99%' . $height . '"">' . $fval . '</textarea>';
+					break;
+				}
+				case 'code': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<textarea id="' . $fid . '" class="code" name="' . $fname . '"></textarea>';
+					break;
+				}
+				case 'content': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<div style="width:100%;display:inline-block">';
+							wp_editor($fval, $fid, [
+								'media_buttons' => ($keys['media'] ?? false),
+								'textarea_name' => $fname
+							]);
+						echo '</div>';
+					break;
+				}
+				case 'file': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<button data-id="' . $fid . '" class="button-primary choose-file-button" style="width:5%"><i class="fa-solid fa-file"></i></button>';
+						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:89%">';
+						echo '<button id="preview-' . $fid . '" data-id="' . $fid . '" class="button-primary view-file-button" style="width:5%"><i class="fa-solid fa-magnifying-glass"></i></button>';
+						echo '<script>';
+							echo '$("#preview-' . $fid . '").on("click", function(e) {';
+								echo 'window.open("' . wp_get_upload_dir()['url'] . '/' . $fval . '", "_blank").focus();';
+								echo 'e.preventDefault();';
+								echo 'return false;';
+							echo '});';
+						echo '</script>';
+					break;
+				}
+				case 'colour': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input id="colour-' . $fid . '" data-id="' . $fid . '" type="color" class="choose-colour-button" value="' . $fval . '">';
+						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:94%">';
+						echo '<script>';
+							echo '$("#' . $fid . '").on("change", function() {';
+								echo '$("#colour-' . $fid . '").val($("#' . $fid . '").val());';
+							echo '});';
+							echo '$("#colour-' . $fid . '").on("change", function() {';
+								echo '$("#' . $fid . '").val($("#colour-' . $fid . '").val());';
+							echo '});';
+						echo '</script>';
+					break;
+				}
+				case 'check': {
+						echo '<em>' . $keys['label'] . ':</em>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<label class="switch">';
+							echo '<input type="hidden" name="' . $fname . '" value="no">';
+							echo '<input type="checkbox" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
+							echo '<span class="slider"></span>';
+						echo '</label>';
+						echo '<script>';
+							echo '$("#' . $fid . '").on("change", function() {';
+								echo '$("#' . $fid . '").val(($("#' . $fid . '").prop("checked")) ? "yes" : "no");';
+							echo '});';
+							echo 'if ("yes" == "' . $fval . '") {';
+								echo '$("#' . $fid . '").prop("checked", true);';
+							echo '}';
+						echo '</script>';
+					break;
+				}
+			}
+
+			echo '</div>';
+		}
+	}	
+
 	//     ▄███████▄   ▄██████▄      ▄████████      ███      
 	//    ███    ███  ███    ███    ███    ███  ▀█████████▄  
 	//    ███    ███  ███    ███    ███    █▀      ▀███▀▀██  
@@ -775,204 +1365,8 @@ class BT {
 		wp_nonce_field(plugins_url(__FILE__), 'wr_plugin_noncename');
 		wp_enqueue_media();
 
-		$idp = strtolower(self::$def['prefix']);
+		self::gen_css();
 ?>
-		<style>
-			#<?php echo $idp; ?>_meta_box {
-				position: relative;
-			}
-			#<?php echo $idp; ?>_meta_box .field-title {
-				position: absolute;
-				display: inline-block;
-				width: 18%;
-			}
-			#<?php echo $idp; ?>_meta_box .field-edit {
-				display: inline-block;
-				margin-left: 20%;
-				margin-bottom: 10px;
-				width: 80%;
-			}
-			#<?php echo $idp; ?>_meta_box em,
-			#<?php echo $idp; ?>_meta_box label {
-				display: inline-block;
-				font-weight: 700;
-				font-style: normal;
-				padding-top: 4px;
-			}
-			#<?php echo $idp; ?>_meta_box input,
-			#<?php echo $idp; ?>_meta_box select,
-			#<?php echo $idp; ?>_meta_box textarea {
-				box-sizing: border-box;
-				display: inline-block;
-				padding: 3px;
-				vertical-align: middle;
-				margin-top: 10px;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw {
-				padding-top: 6px;
-				margin-bottom: 8px;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw .label {
-				display: inline-block;
-				padding: 10px 15px 0 5px;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw .mc {
-				appearance: none;
-				background-color: #dfe1e4;
-				border-radius: 72px;
-				border-style: none;
-				flex-shrink: 0;
-				height: 20px;
-				margin: -2px 0 0 0;
-				position: relative;
-				width: 30px;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw .mc::before {
-				bottom: -6px;
-				content: "";
-				left: -6px;
-				position: absolute;
-				right: -6px;
-				top: -6px;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw .mc,
-			#<?php echo $idp; ?>_meta_box .mcw .mc::after {
-				transition: all 100ms ease-out;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw .mc::after {
-				background-color: #fff;
-				border-radius: 50%;
-				content: "";
-				height: 14px;
-				left: 3px;
-				position: absolute;
-				top: 3px;
-				width: 14px;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw input[type=checkbox] {
-				cursor: default;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw .mc:hover {
-				background-color: #c9cbcd;
-				transition-duration: 0s;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw .mc:checked {
-				background-color: var(--admin-highlight, #2271b1);
-			}
-			#<?php echo $idp; ?>_meta_box .mcw .mc:checked::after {
-				background-color: #fff;
-				left: 13px;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw :focus:not(.focus-visible) {
-				outline: 0;
-			}
-			#<?php echo $idp; ?>_meta_box .mcw .mc:checked:hover {
-				background-color: var(--admin-highlight, #2271b1);
-			}
-			#<?php echo $idp; ?>_meta_box input[type=radio] {
-				margin-right: 20px;
-				width: 20px;
-				height: 20px;
-				margin-top: -4px;
-				appearance: none;
-				background-color: #fff;
-			}
-			#<?php echo $idp; ?>_meta_box input[type=radio]:checked::before,
-			#<?php echo $idp; ?>_meta_box input[type=radio]:checked {
-				background-color: var(--admin-highlight, #2271b1);
-				border: 2px solid var(--admin-highlight, #2271b1);
-			}
-			#<?php echo $idp; ?>_meta_box span.desc {
-				display: block;
-				padding-top: 0px;
-				font-style: italic;
-				font-size: 12px;
-			}
-			#<?php echo $idp; ?>_meta_box div.middle {
-				position: relative;
-				margin-bottom: 10px;
-				padding-bottom: 10px;
-				border-bottom: 1px dashed #ddd;
-			}
-			#<?php echo $idp; ?>_meta_box div.top {
-				position: relative;
-				margin-top: 10px;
-				margin-bottom: 10px;
-				padding-bottom: 10px;
-				border-bottom: 1px dashed #ddd;
-			}
-			#<?php echo $idp; ?>_meta_box div.bottom {
-				position: relative;
-				margin-bottom: 0;
-				padding-bottom: 0;
-				border-bottom: 0;
-			}
-			#<?php echo $idp; ?>_meta_box .switch {
-				position: relative;
-				display: inline-block;
-				width: 50px;
-				height: 24px;
-				margin: 3px 0;
-			}
-			#<?php echo $idp; ?>_meta_box .switch input {
-				opacity: 0;
-				width: 0;
-				height: 0;
-			}
-			#<?php echo $idp; ?>_meta_box .slider {
-				position: absolute;
-				cursor: pointer;
-				top: 0;
-				left: 0;
-				right: 0;
-				bottom: 0;
-				background-color: #ccc;
-				transition: .4s;
-				border-radius: 24px;
-			}
-			#<?php echo $idp; ?>_meta_box .slider:before {
-				position: absolute;
-				content: "";
-				height: 20px;
-				width: 20px;
-				left: 4px;
-				bottom: 4px;
-				background-color: white;
-				transition: .4s;
-				border-radius: 50%;
-			}
-			#<?php echo $idp; ?>_meta_box input:checked + .slider {
-				background-color: var(--admin-highlight, #2271b1);
-			}
-			#<?php echo $idp; ?>_meta_box input:focus + .slider {
-				box-shadow: 0 0 1px var(--admin-highlight, #2271b1);
-			}
-			#<?php echo $idp; ?>_meta_box input:checked + .slider:before {
-				transform: translateX(22px);
-			}
-			#<?php echo $idp; ?>_meta_box .bt_data-view {
-				display: inline-block;
-				width: 73%;
-				padding: 3px;
-				margin-top: 10px;
-			}
-			#<?php echo $idp; ?>_meta_box .choose-colour-button {
-				margin-top: 9px;
-				height: 37px;
-			}
-			#<?php echo $idp; ?>_meta_box .choose-file-button {
-				position: relative;
-				top: 7px;
-				margin-right: 1px;
-				height: 37px;
-			}
-			#<?php echo $idp; ?>_meta_box .view-file-button {
-				position: relative;
-				top: 7px;
-				margin-left: 1px;
-				height: 37px;
-			}
-		</style>
 		<script>
 			var $ = jQuery;
 		</script>
@@ -999,315 +1393,9 @@ class BT {
 ?>
 			<div class="<?php echo $class; ?>">
 <?php
-			$fid = self::$def['prefix'] . '_' . $type . '_' . $field;
-			$fname = '_' . self::$def['prefix'] . '_' . $type . '_' . $field;
 			$fval = $field_values[$field];
 
-			if (!empty($keys['linked'])) {
-				// this is a linked id field
-
-				if ($keys['type'] == 'view') {
-					// this is a view linked records field
-
-					echo '<div class="field-title">';
-						echo '<label>' . $keys['label'] . ':</label>';
-						echo '<span class="desc">' . $keys['description'] . '</span>';
-					echo '</div>';
-
-					echo '<div class="field-edit">';
-
-					if ($keys['linked'] == 'user') {
-						// view all linked users
-
-						$roles = (strpos($keys['role'], ',') === true) ? explode(',', $keys['role']) : [$keys['role']];
-						$role = (isset($keys['role'])) ? ['role__in' => $roles] : null;
-						$users = get_users($role);
-
-						if (count($users)) {
-							foreach ($users as $user) {
-								echo '<div id="user-' . $user->ID . '" class="bt_data-view">' . $user->display_name . '</div>';
-							}
-						}
-						else {
-							echo '<div id="user-none" class="bt_data-view">No data to view</div>';
-						}
-					}
-					else {
-						// view all linked records of 'type'
-
-						$loop = get_posts([
-							'post_type' => $keys['linked'],
-							'post_status' => 'publish',
-							'posts_per_page' => '-1',
-							'orderby' => 'title',
-							'order' => 'ASC'
-						]);
-
-						if (count($loop) > 0) {
-							foreach ($loop as $post) {
-								if ($post->post_title != 'Auto Draft') {
-									echo '<div value="' . $keys['linked'] . '-' . $post->ID . '">' . $post->post_title . '</div>';
-								}
-							}
-						}
-					}
-
-					echo '</div>';
-				}
-				else {
-					// this is a standard linked record field
-?>
-					<input type="hidden" id="<?php echo $fid; ?>" name="<?php echo $fname; ?>" value="<?php echo $fval; ?>">
-<?php
-					if ($keys['type'] == 'select') {
-						// this field needs a select box
-?>
-					<div class="field-title">
-						<label><?php echo $keys['label']; ?>:</label>
-						<span class="desc"><?php echo $keys['description']; ?></span>
-					</div>
-
-					<div class="field-edit">
-
-						<select id="<?php echo self::$def['prefix']; ?>-<?php echo $keys['linked']; ?>">
-							<option value="">Select <?php echo ucwords(str_replace('_', ' ', $keys['linked'])); ?>&hellip;</option>
-<?php
-						if ($keys['linked'] == 'user') {
-							// list all linked users
-
-							$roles = (strpos($keys['role'], ',') === true) ? explode(',', $keys['role']) : [$keys['role']];
-							$role = (isset($keys['role'])) ? ['role__in' => $roles] : null;
-							$users = get_users($role);
-
-							if (count($users)) {
-								foreach ($users as $user) {
-									$id = $user->ID;
-									$selected = ($id == $fval) ? ' selected' : '';
-									echo '<option value="' . $id . '"' . $selected . '>' . $user->display_name . '</option>';
-								}
-							}
-						}
-						else {
-							// list all linked records of 'type'
-
-							$loop = get_posts([
-								'post_type' => $keys['linked'],
-								'post_status' => 'publish',
-								'posts_per_page' => '-1',
-								'orderby' => 'title',
-								'order' => 'ASC'
-							]);
-
-							if (count($loop) > 0) {
-								foreach ($loop as $post) {
-									$id = $post->ID;
-									$selected = ($id == $fval) ? ' selected' : '';
-									if ($post->post_title != 'Auto Draft') {
-										echo '<option value="' . $id . '"' . $selected . '>' . $post->post_title . '</option>';
-									}
-								}
-							}
-						}
-?>
-						</select>
-					</div>
-
-					<script>
-						var <?php echo $field; ?>_select = $('#<?php echo self::$def['prefix']; ?>-<?php echo $keys['linked']; ?>');
-						var <?php echo $field; ?>_input = $('#<?php echo self::$def['prefix']; ?>_<?php echo $type; ?>_<?php echo $field; ?>');
-						<?php echo $field; ?>_select.on('change', function() {
-							<?php echo $field; ?>_input.val($(this).val());
-						});
-					</script>
-<?php
-					}
-				}
-			}
-			else {
-				// this is a data field
-
-				echo '<div class="field-title">';
-
-				$default = $keys['default'] ?? '';
-				$height = $keys['height'] ?? null;
-
-				switch ($keys['type']) {
-					case 'select': {
-							echo '<label for="' . $fid . '">';
-								echo $keys['label'] . ':';
-							echo '</label>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						echo '<div class="field-edit">';
-							echo '<select id="' . $fid . '" name="' . $fname . '">';
-								echo '<option value="">Select ' . $keys['label'] . '&hellip;</option>';
-								foreach ($keys['values'] as $value => $label) {
-									$selected = ($fval == $value) ? ' selected' : '';
-									echo '<option value="' . $value . '"' . $selected . '>' . $label . '</option>';
-								}
-							echo '</select>';
-						break;
-					}
-					case 'multi': {
-							echo '<em>' . $keys['label'] . ':</em>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						echo '<div class="field-edit">';
-							echo '<input type="hidden" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
-							echo '<div class="mcw">';
-							$farray = explode(',', $fval);
-							foreach ($keys['values'] as $value => $label) {
-								$checked = (in_array($value, $farray)) ? ' checked' : '';
-								echo '<input type="checkbox" class="mc check-' . $fid . '" data-val="' . $value . '"' . $checked . '>';
-								echo '<span class="label">' . $label . '</span>';
-								echo (!empty($keys['row'])) ? '' : '<br>';
-							}
-							echo '</div>';
-							echo '<script>';
-								echo '$(".check-' . $fid . '").on("change", function() {';
-									echo 'var v' . $fid . ' = [];';
-									echo '$(".check-' . $fid . ':checked").each(function(i, v){';
-										echo 'v' . $fid . '.push($(v).data("val"));';
-									echo '});';
-									echo '$("#' . $fid . '").val(v' . $fid . '.join());';
-								echo '});';
-							echo '</script>';
-						break;
-					}
-					case 'radio': {
-						echo '<em>';
-							echo $keys['label'] . ':';
-						echo '</em>';
-						foreach ($keys['values'] as $value => $label) {
-							$checked = ($fval == $value) ? ' checked' : '';
-							echo '<div style="display:inline-block;margin:14px 0 14px 0">';
-								echo '<span class="label">' . $label . '</span>';
-								echo '<input type="radio" name="' . $fname . '" value="' . $value . '"' . $checked . '>';
-							echo '</div>';
-						}
-						break;
-					}
-					case 'input': {
-							echo '<label for="' . $fid . '">';
-								echo $keys['label'] . ':';
-							echo '</label>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						echo '<div class="field-edit">';
-							echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
-						break;
-					}
-					case 'display': {
-							echo '<label for="' . $fid . '">';
-								echo $keys['label'] . ':';
-							echo '</label>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						echo '<div class="field-edit">';
-							echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" readonly>';
-						break;
-					}
-					case 'date': {
-							echo '<label for="' . $fid . '">';
-								echo $keys['label'] . ':';
-							echo '</label>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						echo '<div class="field-edit">';
-							echo '<input type="date" id="' . $fid . '" class="date" name="' . $fname . '" value="' . $fval . '">';
-						break;
-					}
-					case 'text': {
-							echo '<label for="' . $fid . '">';
-								echo $keys['label'] . ':';
-							echo '</label>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						$height = ($keys['height']) ? ' style="height:' . $keys['height'] . '"' : '';
-						echo '<div class="field-edit">';
-							echo '<textarea id="' . $fid . '" class="tabs" name="' . $fname . '"' . $height . '>' . $fval . '</textarea>';
-						break;
-					}
-					case 'code': {
-							echo '<label for="' . $fid . '">';
-								echo $keys['label'] . ':';
-							echo '</label>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						echo '<div class="field-edit">';
-							echo '<textarea id="' . $fid . '" class="code" name="' . $fname . '"></textarea>';
-						break;
-					}
-					case 'content': {
-							$height = ($height) ? 'height:' . $height : '';
-							echo '<label for="' . $fid . '">';
-								echo $keys['label'] . ':';
-							echo '</label>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						echo '<div class="field-edit">';
-							echo '<div style="width:100%;display:inline-block' . $height . '">';
-								wp_editor($fval, $fid, [
-									'media_buttons' => $keys['media'],
-									'textarea_name' => $fname
-								]);
-							echo '</div>';
-						break;
-					}
-					case 'file': {
-							echo '<label for="' . $fid . '">';
-								echo $keys['label'] . ':';
-							echo '</label>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						echo '<div class="field-edit">';
-							echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:90%">';
-							echo '<input data-id="' . $fid . '" type="button" class="button-primary choose-file-button" value="..." style="width:5%">';
-						break;
-					}
-					case 'colour': {
-							echo '<label for="' . $fid . '">';
-								echo $keys['label'] . ':';
-							echo '</label>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						echo '<div class="field-edit">';
-							echo '<input id="' . $fid . '" type="text" name="' . $fname . '" style="width:94.5%" value="' . $fval . '">';
-							echo '<input id="colour-' . $fid . '" data-id="' . $fid . '" type="color" class="choose-colour-button" value="' . $fval . '" style="width:5%;height:36px">';
-							echo '<script>';
-								echo '$("#colour-' . $fid . '").on("change", function() {';
-									echo '$("#' . $fid . '").val($(this).val());';
-								echo '});';
-								echo '$("#' . $fid . '").on("change", function() {';
-									echo '$("#colour-' . $fid . '").val($(this).val());';
-								echo '});';
-							echo '</script>';
-						break;
-					}
-					case 'check': {
-							echo '<em>' . $keys['label'] . ':</em>';
-							echo '<span class="desc">' . $keys['description'] . '</span>';
-						echo '</div>';
-						echo '<div class="field-edit">';
-							echo '<label class="switch">';
-								echo '<input type="hidden" name="' . $fname . '" value="no">';
-								echo '<input type="checkbox" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
-								echo '<span class="slider"></span>';
-							echo '</label>';
-							echo '<script>';
-								echo '$("#' . $fid . '").on("change", function() {';
-									echo '$("#' . $fid . '").val(($("#' . $fid . '").prop("checked")) ? "yes" : "no");';
-								echo '});';
-								echo 'if ("yes" == "' . $fval . '") {';
-									echo '$("#' . $fid . '").prop("checked", true);';
-								echo '}';
-							echo '</script>';
-						break;
-					}
-				}
-
-				echo '</div>';
-			}
+			self::gen_fields('post', $type, $field, $fval, $keys);
 ?>
 			</div>
 <?php
@@ -1315,47 +1403,12 @@ class BT {
 		}
 ?>
 		</div>
-		<script>
-			$(function(){
-				var mediaUploader, bid;
-				$('.choose-file-button').on('click', function(e) {
-					bid = '#' + $(this).data('id');
-					e.preventDefault();
-					if (mediaUploader) {
-						mediaUploader.open();
-						return;
-					}
-					mediaUploader = wp.media.frames.file_frame = wp.media({
-						title: 'Choose File',
-						button: {
-							text: 'Choose File'
-						}, multiple: false
-					});
-					wp.media.frame.on('open', function() {
-						if (wp.media.frame.content.get() !== null) {          
-							wp.media.frame.content.get().collection._requery(true);
-							wp.media.frame.content.get().options.selection.reset();
-						}
-					}, this);
-					mediaUploader.on('select', function() {
-						var attachment = mediaUploader.state().get('selection').first().toJSON();
-						$(bid).val(attachment.url.split('/').pop());
-					});
-					mediaUploader.open();
-				});
-			});
-		</script>
 <?php
+
+		self::gen_js();
 	}
 
-	//     ▄████████     ▄████████   ▄█    █▄      ▄████████  
-	//    ███    ███    ███    ███  ███    ███    ███    ███  
-	//    ███    █▀     ███    ███  ███    ███    ███    █▀   
-	//    ███           ███    ███  ███    ███   ▄███▄▄▄      
-	//  ▀███████████  ▀███████████  ███    ███  ▀▀███▀▀▀      
-	//           ███    ███    ███  ▀██    ███    ███    █▄   
-	//     ▄█    ███    ███    ███   ▀██  ██▀     ███    ███  
-	//   ▄████████▀     ███    █▀     ▀████▀      ██████████
+	// save posts data
 
 	public static function save_postdata($post_id) {
 		$post = get_post($post_id);
@@ -1379,14 +1432,7 @@ class BT {
 		}
 	}
 
-	//   ▄█    █▄    ▄█      ▄████████   ▄█     █▄      ▄████████  
-	//  ███    ███  ███     ███    ███  ███     ███    ███    ███  
-	//  ███    ███  ███▌    ███    █▀   ███     ███    ███    █▀   
-	//  ███    ███  ███▌   ▄███▄▄▄      ███     ███    ███         
-	//  ███    ███  ███▌  ▀▀███▀▀▀      ███     ███  ▀███████████  
-	//  ▀██    ███  ███     ███    █▄   ███     ███           ███  
-	//   ▀██  ██▀   ███     ███    ███  ███ ▄█▄ ███     ▄█    ███  
-	//    ▀████▀    █▀      ██████████   ▀███▀███▀    ▄████████▀
+	// posts views
 
 	public static function posts_custom_column_views($column_name, $id) {
 		$type = get_post_type($id);
@@ -1465,6 +1511,8 @@ class BT {
 		return $columns;
 	}
 
+
+
 	//      ███         ▄████████  ▀████    ▐████▀  
 	//  ▀█████████▄    ███    ███    ███▌   ████▀   
 	//     ▀███▀▀██    ███    ███     ███  ▐███     
@@ -1474,7 +1522,222 @@ class BT {
 	//      ███        ███    ███   ▄███     ███▄   
 	//     ▄████▀      ███    █▀   ████       ███▄
 
-	public static function edit_form_fields($term) {
+	public static function edit_taxonomy_fields($term) {
+		global $pagenow;
+
+		switch ($pagenow) {
+			case 'edit-tags.php': {
+				$action = $_GET['action'] ?? 'list';
+				break;
+			}
+			case 'term.php': {
+				$action = 'edit';
+				break;
+			}
+			default: {
+				$action = 'list';
+			}
+		}
+
+		$taxonomy = ($term->taxonomy) ?? $term;
+
+		$field_values = [];
+
+		$prefix = self::prefix($taxonomy);
+		$keys = BT::$taxes[$taxonomy]['fields'];
+		$label = ucwords(strtolower(str_replace('_', ' ', $taxonomy)));
+
+		$hierarchical = BT::$taxes[$taxonomy]['hierarchical'];
+		$show_description = BT::$taxes[$taxonomy]['description'];
+		$show_slug = BT::$taxes[$taxonomy]['slug'];
+
+		if ($action != 'list') {
+?>
+		<br>
+		<a class="button button-primary" href="/wp-admin/edit-tags.php?taxonomy=<?php echo $taxonomy; ?>">Back to <?php echo self::plural($label); ?> List…</a>
+		<br>
+		<br>
+		<div id="poststuff">
+			<div id="post-body" class="metabox-holder columns-2">
+				<div id="post-body-content">
+					<div id="titlediv">
+						<div id="titlewrap"></div>
+					</div>
+				</div>
+
+				<div id="postbox-container-1" class="postbox-container">
+					<div id="side-sortables" class="meta-box-sortables ui-sortable">
+						<div id="submitdiv" class="postbox">
+							<div class="postbox-header">
+								<h2 class="hndle ui-sortable-handle">Publish</h2>
+								<div class="handle-actions hide-if-no-js"></div>
+							</div>
+							<div class="inside">
+								<div class="submitbox" id="submitpost">
+									<div id="major-publishing-actions">
+										<div id="publishing-action">
+											<span class="spinner"></span>
+											<input type="submit" name="save" id="publish" class="button button-primary button-large" value="Save">
+										</div>
+										<div class="clear"></div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div id="postbox-container-2" class="postbox-container">
+					<div id="normal-sortables" class="meta-box-sortables ui-sortable empty-container"></div>
+						<div id="advanced-sortables" class="meta-box-sortables ui-sortable">
+							<div id="bt_meta_box" class="postbox">
+								<div class="postbox-header"><h2 class="hndle ui-sortable-handle">Information</h2>
+									<div class="handle-actions hide-if-no-js"></div>
+								</div>
+<?php
+		}
+
+		if (count($keys) > 0) {
+			foreach ($keys as $key => $details) {
+				$field_values[$key] = get_term_meta($term->term_id, $prefix . $key, true);
+			}		
+		}
+
+		wp_nonce_field(plugins_url(__FILE__), 'wr_plugin_noncename');
+		wp_enqueue_media();
+
+		if (is_string($term)) {
+			// this is a new term
+
+			$a = ($action == 'new') ? 'right' : 'left';
+			$b = ($action == 'new') ? 'left' : 'right';
+
+			echo '<style>#col-' . $a . '{display:none}#col-' . $b . '{width:100%}#titlediv #tag-name{padding:3px 8px;font-size:1.7em;line-height:100%;height:1.7em;width:100%;outline: 0;margin:0 0 3px;background-color:#fff}</style>';
+		}
+		else {
+			// editing existing term
+
+			echo '<style>#edittag{max-width:100%}#titlediv #name{padding:3px 8px;font-size:1.7em;line-height:100%;height:1.7em;width:100%;outline: 0;margin:0 0 3px;background-color:#fff}</style>';
+		}
+
+		if ($action != 'list') {
+			$name_element = ($action == 'new') ? 'tag-name' : 'name';
+			$slug_element = ($action == 'new') ? 'tag-slug' : 'slug';
+			$desc_element = ($action == 'new') ? 'tag-description' : 'description';
+
+			self::gen_css();
+?>
+								<script>
+									var $ = jQuery;
+									$(function() {
+										let t = $('#<?php echo $name_element; ?>').detach();
+										$('#titlewrap').append(t);
+
+										let s = $('#<?php echo $slug_element; ?>').detach();
+										s.css({'width':'99%'});
+										$('#meta-slug').append(s);
+
+										let p = $('#parent').detach();
+										p.css({'width':'99%'});
+										$('#meta-parent').append(p);
+
+										let d = $('#<?php echo $desc_element; ?>').detach();
+										d.addClass('large-text');
+										$('#meta-description').append(d);
+
+										$('#tag-name').focus();
+									});
+								</script>
+								<div class="inside">
+<?php
+			$count = 1;
+
+			if ($show_slug) {
+				$count++;
+?>
+									<div class="top">
+										<div class="field-title">
+											<label>Slug:</label>
+											<span class="desc">URL-friendly version of the title</span>
+										</div>
+										<div class="field-edit" id="meta-slug"></div>
+									</div>
+<?php
+			}
+
+			if ($hierarchical) {
+				$count++;
+				$class = ($count == 1) ? 'top' : 'middle';
+?>
+									<div class="<?php echo $class; ?>">
+										<div class="field-title">
+											<label>Parent <?php echo $label; ?>:</label>
+											<span class="desc">Assign a parent to create a hierarchy</span>
+										</div>
+										<div class="field-edit" id="meta-parent"></div>
+									</div>
+<?php
+			}
+
+			if ($show_description) {
+				$count++;
+				$class = ($count == 1) ? 'top' : 'middle';
+?>
+									<div class="<?php echo $class; ?>">
+										<div class="field-title">
+											<label>Description:</label>
+											<span class="desc">A description of this category</span>
+										</div>
+										<div class="field-edit" id="meta-description"></div>
+									</div>
+<?php
+			}
+
+			foreach (BT::$taxes[$taxonomy]['fields'] as $field => $keys) {
+
+				// set box class
+				switch ($count) {
+					case count(BT::$taxes[$taxonomy]['fields']): {
+						$class = 'bottom';
+						break;
+					}
+					case 1: {
+						$class = 'top';
+						break;
+					}
+					default: {
+						$class = 'middle';
+					}
+				}
+?>
+								<div class="<?php echo $class; ?>">
+<?php
+				$fval = $field_values[$field];
+
+				self::gen_fields('taxonomy', $taxonomy, $field, $fval, $keys);
+?>
+								</div>
+<?php
+				$count++;
+			}
+?>
+							</div>
+<?php
+		
+			self::gen_js();
+?>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
+<?php
+		}
+	}
+
+	// being replaced by above function
+
+	public static function xedit_form_fields($term) {
 		global $pagenow;
 
 		$taxonomy = ($term->taxonomy) ?? $term;
@@ -1637,22 +1900,23 @@ class BT {
 		}
 	}
 
-	public static function save_form_fields($term_id, $tt_id, $taxonomy) {
-		if (isset(self::$taxes[$taxonomy['taxonomy']])) {
-			$fields = (isset(self::$taxes[$taxonomy]['fields'])) ? self::$taxes[$taxonomy]['fields'] : null;
+	public static function save_taxonomy_fields($term_id, $tt_id, $taxonomy) {
+		$type = $taxonomy['taxonomy'];
 
-			if ($fields) {
-				foreach ($fields as $field => $data) {
-					if (isset($_POST[$field])) {
-						$value = $_POST[$field];
-	
+		if (array_key_exists($type, self::$taxes)) {
+			$prefix = self::prefix($type);
+			$keys = self::$taxes[$type]['fields'];
+
+			if ($keys) {
+				foreach ($keys as $key => $details) {
+					if (array_key_exists($prefix . $key, $_POST)) {
 						update_term_meta(
 							$term_id,
-							$field,
-							sanitize_text_field($value)
+							$prefix . $key,
+							sanitize_text_field($_POST[$prefix . $key])
 						);
 					}
-				}
+				}		
 			}
 		}
 	}
@@ -1669,6 +1933,80 @@ class BT {
 				echo '<script>jQuery(function($){$("h1.wp-heading-inline").after("' . $button . '");});</script>';
 			}
 		}
+	}
+
+	// taxonomy list view columns
+
+	public static function taxonomy_custom_columns($columns) {
+		$columns['custom_column'] = 'Custom';
+
+		return $columns;
+	}
+
+	public static function taxonomy_custom_column_views($content, $column_name, $term_id) {
+		if ($column_name == 'custom_column') {
+			$content = 'custom';
+		}
+
+		return $content;
+	}
+
+	//  ███    █▄      ▄████████     ▄████████     ▄████████  
+	//  ███    ███    ███    ███    ███    ███    ███    ███  
+	//  ███    ███    ███    █▀     ███    █▀     ███    ███  
+	//  ███    ███    ███          ▄███▄▄▄       ▄███▄▄▄▄██▀  
+	//  ███    ███  ▀███████████  ▀▀███▀▀▀      ▀▀███▀▀▀▀▀    
+	//  ███    ███           ███    ███    █▄   ▀███████████  
+	//  ███    ███     ▄█    ███    ███    ███    ███    ███  
+	//  ████████▀    ▄████████▀     ██████████    ███    ███
+
+	// edit user page
+
+	public static function user_profile_fields($user) {
+?>
+		<table class="form-table">
+			<tr>
+				<th>
+					<label for="code">Custom Meta:</label>
+				</th>
+				<td>
+					<input type="text" name="code" id="code" value="<?php echo esc_attr(get_the_author_meta('code', $user->ID)); ?>" class="regular-text">
+				</td>
+			</tr>
+		</table>
+<?php
+	}
+
+	// save user data
+
+	public static function update_profile_fields($user_id) {
+		if (current_user_can('edit_user', $user_id)) {
+			update_user_meta($user_id, 'code', $_POST['code']);
+		}
+	}
+
+	// user view columns
+
+	public static function manage_users_columns($columns) {
+		unset($columns['posts']);
+
+		//$columns['code'] = 'Code';
+
+		return $columns;
+	}
+
+	public static function manage_users_custom_column($output, $column_key, $user_id) {
+		switch ($column_key) {
+			case 'code': {
+				$value = get_user_meta($user_id, 'code', true);
+
+				return $value;
+				break;
+			}
+			default: break;
+		}
+
+		return $output;
 	}
 }
 

@@ -8,6 +8,7 @@ jQuery(function($) {
 		'bt_active',
 		'bt_title',
 		'bt_icon',
+		'bt_hide_admin',
 		'bt_posts',
 		'bt_taxes',
 		'bt_roles'

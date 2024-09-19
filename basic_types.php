@@ -51,6 +51,10 @@ class BT {
 				'type' => 'string',
 				'default' => ''
 			],
+			'bt_hide_admin' => [
+				'type' => 'string',
+				'default' => 'yes'
+			],
 			'bt_posts' => [
 				'type' => 'string',
 				'default' => '{}'
@@ -81,6 +85,10 @@ class BT {
 					'bt_icon' => [
 						'label' => 'Icon',
 						'type' => 'file'
+					],
+					'bt_hide_admin' => [
+						'label' => 'Hide "administrator" user accounts',
+						'type' => 'check'
 					]
 				]
 			],
@@ -178,8 +186,8 @@ class BT {
 				add_filter('manage_' . $type . '_posts_columns', __CLASS__ . '::posts_column_views');
 				add_filter('manage_edit-' . $type . '_sortable_columns', __CLASS__ . '::set_posts_sortable_columns');
 
-				$uc_type = ucwords(str_replace('_', ' ', $type));
-				$p_type = self::plural($uc_type);
+				$uc_type = self::label($type, false, true);
+				$p_type = self::label($type);
 
 				$labels = [
 					'name' => $p_type,
@@ -223,8 +231,8 @@ class BT {
 				add_filter('manage_edit_' . $tax . '_columns', __CLASS__ . '::taxonomy_custom_columns');
 				add_action('manage_' . $tax . '_custom_column', __CLASS__ . '::taxonomy_custom_column_views', 10, 3);
 
-				$uc_tax = ucwords(str_replace('_', ' ', $tax));
-				$p_tax = self::plural($uc_tax);
+				$uc_tax = self::label($tax, false, true);
+				$p_tax = self::label($tax);
 
 				$labels = [
 					'name' => $p_tax,
@@ -259,6 +267,27 @@ class BT {
 					register_taxonomy_for_object_type($tax, $type);
 				}
 			}
+		}
+
+		// register user meta
+
+		if (self::check(self::$roles)) {
+			add_filter('manage_users_columns', __CLASS__ . '::manage_users_columns', 10, 1);
+			add_action('manage_users_custom_column', __CLASS__ . '::manage_users_custom_column', 10, 3);
+			add_action('user_new_form', __CLASS__ . '::user_profile_fields');
+			add_action('show_user_profile', __CLASS__ . '::user_profile_fields');
+			add_action('edit_user_profile', __CLASS__ . '::user_profile_fields');
+			add_action('personal_options_update', __CLASS__ . '::update_profile_fields');
+			add_action('edit_user_profile_update', __CLASS__ . '::update_profile_fields');
+
+			foreach (self::$roles as $role => $data) {
+
+			}
+		}
+
+		if (_BT['bt_hide_admin'] == 'yes') {
+			add_action('pre_user_query', __CLASS__ . '::hide_administrators');
+			add_filter('views_users', __CLASS__ . '::modify_user_count');
 		}
 
 		// and we're done
@@ -466,11 +495,12 @@ class BT {
 
 		if (self::check(self::$taxes)) {
 			foreach (self::$taxes as $tax => $type) {
-				$plural = self::plural(str_replace('_', ' ', $tax));
+				$label = self::label($tax);
+
 				add_submenu_page(
 					self::$slug,
-					ucwords($plural),
-					ucwords($plural),
+					$label,
+					$label,
 					'manage_options',
 					'/edit-tags.php?taxonomy=' . $tax
 				);
@@ -481,12 +511,12 @@ class BT {
 
 		if (self::check(self::$posts)) {
 			foreach (self::$posts as $type => $data) {
-				$plural = self::plural(str_replace('_', ' ', $type));
+				$label = self::label($type);
 
 				add_submenu_page(
 					self::$slug,
-					ucwords($plural),
-					ucwords($plural),
+					$label,
+					$label,
 					'manage_options',
 					'/edit.php?post_type=' . $type
 				);
@@ -628,6 +658,8 @@ class BT {
 	}
 
 	public static function admin_scripts() {
+		wp_enqueue_style('fa', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css');
+
 		$screen = get_current_screen();
 
 		if (null === $screen) {
@@ -637,7 +669,6 @@ class BT {
 			return;
 		}
 
-		wp_enqueue_style('fa', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css');
 		wp_enqueue_code_editor(['type' => 'application/x-httpd-php']);
 	}
 
@@ -693,32 +724,37 @@ class BT {
 		return $result;
 	}
 
-	// pluralise a string (possibly some missed exceptions)
+	// prettify and pluralise a string (possibly some missed exceptions)
 
-	public static function plural($string) {
-		$do_not = [
-			'personnel'
-		];
+	public static function label($string, $plural = true, $caps = true) {
+		if ($plural) {
+			$do_not = [
+				'personnel'
+			];
 
-		switch (substr($string, -1)) {
-			case 'y': {
-				$plural = rtrim($string, 'y') . 'ies';
-				break;
-			}
-			case 'h': {
-				$plural = $string . 'es';
-				break;
-			}
-			case 's': {
-				$plural = $string . 'es';
-				break;
-			}
-			default: {
-				$plural = (in_array(strtolower(trim($string)), $do_not) ? $string : $string . 's');
+			switch (substr($string, -1)) {
+				case 'y': {
+					$string = rtrim($string, 'y') . 'ies';
+					break;
+				}
+				case 'h':
+				case 's': {
+					$string = $string . 'es';
+					break;
+				}
+				default: {
+					$string = (in_array(strtolower(trim($string)), $do_not) ? $string : $string . 's');
+				}
 			}
 		}
 
-		return $plural;
+		$string = str_replace('_', ' ', $string);
+
+		if ($caps) {
+			$string = ucwords(strtolower($string));
+		}
+
+		return $string;
 	}
 
 	// add back to... button on type edit page
@@ -729,7 +765,7 @@ class BT {
 		$type = $post->post_type;
 
 		if (isset(BT::$posts[$type])) {
-			echo '<br><a class="button button-primary" href="/wp-admin/edit.php?post_type=' . $type . '">Back to ' . ucwords(self::plural(str_replace('_', ' ', $type))) . ' List&hellip;</a><br><br>';
+			echo '<br><a class="button button-primary" href="/wp-admin/edit.php?post_type=' . $type . '">Back to ' . self::label($type) . ' List&hellip;</a><br><br>';
 		}
 	}
 
@@ -929,15 +965,18 @@ class BT {
 				}
 				& .choose-file-button {
 					position: relative;
-					top: 7px;
+					top: 6px;
 					margin-right: 1px;
-					height: 37px;
+					height: 36px;
 				}
 				& .view-file-button {
 					position: relative;
-					top: 7px;
+					top: 6px;
 					margin-left: 1px;
-					height: 37px;
+					height: 36px;
+				}
+				& .button-primary:hover {
+					box-shadow: 0 0 100px 100px rgba(255,255,255,.3) inset;
 				}
 			}
 			p.search-box,
@@ -949,6 +988,39 @@ class BT {
 			table.form-table,
 			.edit-tag-actions {
 				display: none;
+			}
+			#post-body #side-sortables {
+				min-height: unset;
+
+				.category-tabs {
+					margin: 14px 0 4px;
+
+					li.tabs {
+						border: 1px solid #dcdcde;
+						border-bottom-color: #fff;
+						background-color: #fff;
+					}
+				}
+			}
+			#major-publishing-actions {
+				border-top: none;
+			}
+			#your-profile > h2 {
+				display: none;
+			}
+			#application-passwords-section {
+				display: none;
+
+				& h2 {
+					padding: 0;
+					font-size: 1.3em;
+				}
+			}
+			.mt-1 {
+				margin-top: 10px !important;
+			}
+			.ml-1 {
+				margin-left: 8px !important;
 			}
 		</style>
 <?php
@@ -1287,7 +1359,7 @@ class BT {
 					echo '</div>';
 					echo '<div class="field-edit">';
 						echo '<input id="colour-' . $fid . '" data-id="' . $fid . '" type="color" class="choose-colour-button" value="' . $fval . '">';
-						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:94%">';
+						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:93%">';
 						echo '<script>';
 							echo '$("#' . $fid . '").on("change", function() {';
 								echo '$("#colour-' . $fid . '").val($("#' . $fid . '").val());';
@@ -1490,8 +1562,9 @@ class BT {
 			foreach (self::$posts[$type] as $field => $keys) {
 				if (isset($keys['column']) && isset($keys['sort'])) {
 					if ($orderby == $field) {
+						$sort_by = ($keys['sort'] == 'int') ? 'meta_value_num' : 'meta_value';
 						$query->set('meta_key', $prefix . $field);
-						$query->set('orderby', 'meta_value');
+						$query->set('orderby', $sort_by);
 					}
 				}
 			}
@@ -1551,10 +1624,12 @@ class BT {
 		$show_description = BT::$taxes[$taxonomy]['description'];
 		$show_slug = BT::$taxes[$taxonomy]['slug'];
 
+		$taxonomies = BT::$taxes[$taxonomy]['taxonomies'] ?? [];
+
 		if ($action != 'list') {
 ?>
 		<br>
-		<a class="button button-primary" href="/wp-admin/edit-tags.php?taxonomy=<?php echo $taxonomy; ?>">Back to <?php echo self::plural($label); ?> List…</a>
+		<a class="button button-primary" href="/wp-admin/edit-tags.php?taxonomy=<?php echo $taxonomy; ?>">Back to <?php echo self::label($label, false, true); ?> List…</a>
 		<br>
 		<br>
 		<div id="poststuff">
@@ -1584,6 +1659,36 @@ class BT {
 								</div>
 							</div>
 						</div>
+<?php
+			if (count($taxonomies) > 0) {
+				foreach ($taxonomies as $category) {
+					$label = self::label($category);
+?>
+						<div id="<?php echo $category; ?>div" class="postbox">
+							<div class="postbox-header">
+								<h2 class="hndle ui-sortable-handle"><?php echo $label; ?></h2>
+								<div class="handle-actions hide-if-no-js"></div>
+							</div>
+							<div class="inside">
+								<div id="taxonomy-<?php echo $category; ?>" class="categorydiv">
+									<ul id="<?php echo $category; ?>-tabs" class="category-tabs">
+										<li class="tabs"><a href="#<?php echo $category; ?>-all">All <?php echo $label; ?></a></li>
+									</ul>
+									<div id="<?php echo $category; ?>-all" class="tabs-panel">
+										<input type="hidden" name="tax_input[<?php echo $category; ?>][]" value="0">
+										<ul id="certification_categorychecklist" data-wp-lists="list:<?php echo $category; ?>" class="categorychecklist form-no-clear">
+											<li id="<?php echo $category; ?>-34">
+												<label class="selectit"><input value="34" type="checkbox" name="tax_input[<?php echo $category; ?>][]" id="in-<?php echo $category; ?>-34"> Official Expertness</label>
+											</li>
+										</ul>
+									</div>
+								</div>
+							</div>
+						</div>
+<?php
+				}
+			}
+?>
 					</div>
 				</div>
 
@@ -1798,17 +1903,268 @@ class BT {
 	// edit user page
 
 	public static function user_profile_fields($user) {
+		global $pagenow;
+
+		switch ($pagenow) {
+			case 'user-new.php': {
+				$action = 'new';
+				break;
+			}
+			case 'user-edit.php': {
+				$action = 'edit';
+				break;
+			}
+			case 'profile.php': {
+				$action = 'profile';
+			}
+		}
+
+		if ($action !== 'new') {
+			$role = get_role($user->roles[0]);
+			$keys = (isset(BT::$roles['add'][$role->name]) && (isset(BT::$roles['add'][$role->name]['fields']))) ? BT::$roles['add'][$role->name]['fields'] : [];
+			$prefix = self::prefix($role->name);
+		}
 ?>
-		<table class="form-table">
-			<tr>
-				<th>
-					<label for="code">Custom Meta:</label>
-				</th>
-				<td>
-					<input type="text" name="code" id="code" value="<?php echo esc_attr(get_the_author_meta('code', $user->ID)); ?>" class="regular-text">
-				</td>
-			</tr>
-		</table>
+		<br>
+		<a class="button button-primary" href="/wp-admin/users.php">Back to Users List…</a>
+		<br>
+		<br>
+		<div id="poststuff">
+			<div id="post-body" class="metabox-holder columns-2">
+
+
+				<div id="postbox-container-1" class="postbox-container">
+					<div id="side-sortables" class="meta-box-sortables ui-sortable">
+						<div id="submitdiv" class="postbox">
+							<div class="postbox-header">
+								<h2 class="hndle ui-sortable-handle">Actions</h2>
+								<div class="handle-actions hide-if-no-js"></div>
+							</div>
+							<div class="inside">
+								<div class="submitbox" id="submitpost">
+									<div id="major-publishing-actions">
+										<div id="publishing-action">
+											<span class="spinner"></span>
+											<!-- submit button moved here -->
+										</div>
+										<div class="clear"></div>
+									</div>
+								</div>
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<div id="postbox-container-2" class="postbox-container">
+					<div id="normal-sortables" class="meta-box-sortables ui-sortable empty-container"></div>
+						<div id="advanced-sortables" class="meta-box-sortables ui-sortable">
+							<div id="bt_meta_box" class="postbox">
+								<div class="postbox-header"><h2 class="hndle ui-sortable-handle">User Information</h2>
+									<div class="handle-actions hide-if-no-js"></div>
+								</div>
+<?php
+		wp_nonce_field(plugins_url(__FILE__), 'wr_plugin_noncename');
+		wp_enqueue_media();
+
+		self::gen_css();
+?>
+								<script>
+									var $ = jQuery;
+									$(function() {
+										let s = $('#user_login').detach();
+										s.css({'width':'99%'});
+										$('#meta-user_login').append(s);
+
+										let r = $('#role').detach();
+										r.css({'width':'99%'});
+										r.find('option[value="administrator"]').remove();
+										$('#meta-role').append(r);
+
+										let e = $('#email').detach();
+										e.css({'width':'99%'});
+										$('#meta-email').append(e);
+
+										let fn = $('#first_name').detach();
+										fn.css({'width':'99%'});
+										$('#meta-first_name').append(fn);
+
+										let ln = $('#last_name').detach();
+										ln.css({'width':'99%'});
+										$('#meta-last_name').append(ln);
+<?php
+		if ($action != 'new') {
+?>
+										let dn = $('#display_name').detach();
+										dn.css({'width':'99%'});
+										$('#meta-display_name').append(dn);
+
+										let u = $('#submit').detach();
+										u.addClass('button-large');
+										$('#publishing-action').append(u);
+
+										$('#publishing-action').append('<br>');
+
+										let rl = $('#generate-reset-link').detach();
+										rl.addClass('mt-1');
+										$('#publishing-action').append(rl);
+
+										let ds = $('#destroy-sessions').detach();
+										ds.addClass('button-secondary mt-1 ml-1');
+										$('#publishing-action').append(ds);
+
+										let ap = $('#application-passwords-section').detach();
+										$('#postbox-container-2').append(ap);
+										ap.show();
+<?php
+		}
+		else {
+?>
+										let p1 = $('#pass1').detach();
+										p1.css({'width':'99%'});
+										$('#meta-pass1').append(p1);
+
+										let c = $('#createusersub').detach();
+										c.addClass('button-large');
+										$('#publishing-action').append(c);
+<?php
+		}
+?>
+										
+									});
+								</script>
+								<div class="inside">
+									<div class="top">
+										<div class="field-title">
+											<label>Username:</label>
+											<span class="desc">Once set, usernames cannot be changed (required)</span>
+										</div>
+										<div class="field-edit" id="meta-user_login"></div>
+									</div>
+<?php
+		if ($action != 'profile') {
+?>
+									<div class="middle">
+										<div class="field-title">
+											<label>User Role:</label>
+											<span class="desc">Role assigned to this user</span>
+										</div>
+										<div class="field-edit" id="meta-role"></div>
+									</div>
+<?php
+		}
+?>
+									<div class="middle">
+										<div class="field-title">
+											<label>Email Address:</label>
+											<span class="desc">The user's email address (required)</span>
+										</div>
+										<div class="field-edit" id="meta-email"></div>
+									</div>
+									<div class="middle">
+										<div class="field-title">
+											<label>First Name:</label>
+											<span class="desc">The user's first name</span>
+										</div>
+										<div class="field-edit" id="meta-first_name"></div>
+									</div>
+									<div class="middle">
+										<div class="field-title">
+											<label>Last Name:</label>
+											<span class="desc">The user's last name</span>
+										</div>
+										<div class="field-edit" id="meta-last_name"></div>
+									</div>
+<?php
+		if ($action != 'new') {
+			$class = (isset(BT::$roles['add'][$role->name]) && isset(BT::$roles['add'][$role->name]['fields'])) ? 'middle' : 'bottom';
+?>
+									<div class="<?php echo $class; ?>">
+										<div class="field-title">
+											<label>Display Name:</label>
+											<span class="desc">A preferred display name for this user</span>
+										</div>
+										<div class="field-edit" id="meta-display_name"></div>
+									</div>
+<?php
+		}
+		else {
+?>
+									<div class="middle">
+										<div class="field-title">
+											<label>Password:</label>
+											<span class="desc">Set a password for this user</span>
+										</div>
+										<div class="field-edit" id="meta-pass1"></div>
+									</div>
+<?php
+		}
+
+		if ($action != 'new') {
+			// we are editing a user, so a role is defined
+			// therefore we can show the related meta fields
+
+			if (isset(BT::$roles['add'][$role->name]) && isset(BT::$roles['add'][$role->name]['fields'])) {
+				// this role has some meta fields
+
+				if (count($keys) > 0) {
+					foreach ($keys as $key => $details) {
+						$field_values[$key] = get_user_meta($user->ID, $prefix . $key, true);
+					}		
+				}
+
+				$count = 1;
+
+				foreach (BT::$roles['add'][$role->name]['fields'] as $field => $keys) {
+
+					// set box class
+					switch ($count) {
+						case count(BT::$roles['add'][$role->name]['fields']): {
+							$class = 'bottom';
+							break;
+						}
+						case 1: {
+							$class = 'top';
+							break;
+						}
+						default: {
+							$class = 'middle';
+						}
+					}
+?>
+								<div class="<?php echo $class; ?>">
+<?php
+					$fval = $field_values[$field];
+
+					self::gen_fields('roles', $role->name, $field, $fval, $keys);
+?>
+								</div>
+<?php
+					$count++;
+				}
+			}
+?>
+							</div>
+<?php
+		}
+		else {
+?>
+									<div class="bottom">
+										<div class="field-title">
+											<label>Additional Data:</label>
+											<span class="desc">Role-based data for users</span>
+										</div>
+										<div class="field-edit" id="meta-info"><p>These extra data fields are based on the assigned user role, and will be available once this new user has been created by clicking the "Add New User" button in the "Actions" box.</p></div>
+									</div>
+<?php			
+		}
+
+		self::gen_js();
+?>
+						</div>
+					</div>
+				</div>
+			</div>
+		</div>
 <?php
 	}
 
@@ -1816,7 +2172,26 @@ class BT {
 
 	public static function update_profile_fields($user_id) {
 		if (current_user_can('edit_user', $user_id)) {
-			update_user_meta($user_id, 'code', $_POST['code']);
+			$user = get_user_by('id', $user_id);
+			$role = get_role($user->roles[0]);
+
+			if (isset(BT::$roles['add'][$role->name]) && isset(BT::$roles['add'][$role->name]['fields'])) {
+				$prefix = self::prefix($role->name);
+				$keys = BT::$roles['add'][$role->name]['fields'];
+
+				if ($keys) {
+					foreach ($keys as $key => $details) {
+						if (array_key_exists($prefix . $key, $_POST)) {
+							update_user_meta(
+								$user_id,
+								$prefix . $key,
+								$_POST[$prefix . $key]
+							);
+						}
+					}		
+				}
+
+			}
 		}
 	}
 
@@ -1842,6 +2217,48 @@ class BT {
 		}
 
 		return $output;
+	}
+
+	public static function hide_administrators($query) {
+		global $wpdb;
+
+		if (strpos($_SERVER['REQUEST_URI'], 'users.php') !== false && !current_user_can('administrator')) {
+			$roles_to_hide = ['administrator'];
+
+			$query->query_where = str_replace(
+				'WHERE 1=1',
+				"WHERE 1=1 AND NOT EXISTS (
+					SELECT 1 FROM $wpdb->usermeta
+					WHERE $wpdb->users.ID = $wpdb->usermeta.user_id
+					AND meta_key = 'wp_capabilities'
+					AND meta_value LIKE '%" . implode('|', $roles_to_hide) . "%'
+				)",
+				$query->query_where
+			);
+		}
+	}
+
+	public static function modify_user_count($views) {
+		if (!current_user_can('administrator')) {
+			$role_counts = count_users();
+			$total_users = $role_counts['total_users'];
+			$admin_count = $role_counts['avail_roles']['administrator'];
+			
+			$non_admin_count = $total_users - $admin_count;
+
+			if (isset($views['all'])) {
+				$views['all'] = str_replace(
+					sprintf('(%d)', $total_users),
+					sprintf('(%d)', $non_admin_count),
+					$views['all']
+				);
+			}
+
+			if (isset($views['administrator'])) {
+				unset($views['administrator']);
+			}
+		}
+		return $views;
 	}
 }
 

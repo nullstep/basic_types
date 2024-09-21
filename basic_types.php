@@ -1677,9 +1677,21 @@ class BT {
 									<div id="<?php echo $category; ?>-all" class="tabs-panel">
 										<input type="hidden" name="tax_input[<?php echo $category; ?>][]" value="0">
 										<ul id="certification_categorychecklist" data-wp-lists="list:<?php echo $category; ?>" class="categorychecklist form-no-clear">
-											<li id="<?php echo $category; ?>-34">
-												<label class="selectit"><input value="34" type="checkbox" name="tax_input[<?php echo $category; ?>][]" id="in-<?php echo $category; ?>-34"> Official Expertness</label>
+<?php
+					$terms = self::get_terms_of_taxonomy($category);
+					$term_ids = explode(',', get_term_meta($term->term_id, $prefix . $category, true));
+
+					if (count($terms) > 0) {
+						foreach ($terms as $term) {
+							$checked = (in_array($term->term_id, $term_ids)) ? ' checked="checked"' : '';
+?>
+											<li id="<?php echo $category; ?>-<?php echo $term->term_id; ?>">
+												<label class="selectit"><input value="<?php echo $term->term_id; ?>" type="checkbox" name="tax_input[<?php echo $category; ?>][]" id="in-<?php echo $category; ?>-<?php echo $term->term_id; ?>"<?php echo $checked; ?>> <?php echo $term->name; ?></label>
 											</li>
+<?php
+						}
+					}
+?>
 										</ul>
 									</div>
 								</div>
@@ -1702,12 +1714,6 @@ class BT {
 <?php
 		}
 
-		if (count($keys) > 0) {
-			foreach ($keys as $key => $details) {
-				$field_values[$key] = get_term_meta($term->term_id, $prefix . $key, true);
-			}		
-		}
-
 		wp_nonce_field(plugins_url(__FILE__), 'wr_plugin_noncename');
 		wp_enqueue_media();
 
@@ -1721,6 +1727,12 @@ class BT {
 		}
 		else {
 			// editing existing term
+
+			if (count($keys) > 0) {
+				foreach ($keys as $key => $details) {
+					$field_values[$key] = get_term_meta($term->term_id, $prefix . $key, true);
+				}		
+			}
 
 			echo '<style>#edittag{max-width:100%}#titlediv #name{padding:3px 8px;font-size:1.7em;line-height:100%;height:1.7em;width:100%;outline: 0;margin:0 0 3px;background-color:#fff}</style>';
 		}
@@ -1858,6 +1870,20 @@ class BT {
 					}
 				}		
 			}
+
+			if (isset($_POST['tax_input']) && is_array($_POST['tax_input'])) {
+				if (count($_POST['tax_input']) > 0) {
+					foreach ($_POST['tax_input'] as $tax => $term_ids) {
+						$term_ids = array_diff($term_ids, [0]);
+
+						update_term_meta(
+							$term_id,
+							$prefix . $tax,
+							sanitize_text_field(implode(',', $term_ids))
+						);
+					}
+				}
+			}
 		}
 	}
 
@@ -1889,6 +1915,20 @@ class BT {
 		}
 
 		return $content;
+	}
+
+	// get terms of a taxonomy
+
+	public static function get_terms_of_taxonomy($taxonomy) {
+		$terms = [];
+
+		if (isset(BT::$taxes[$taxonomy])) {
+			$terms = get_terms($taxonomy, [
+				'hide_empty' => false
+			]);
+		}
+
+		return $terms;
 	}
 
 	//  ███    █▄      ▄████████     ▄████████     ▄████████  

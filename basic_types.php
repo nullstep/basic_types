@@ -1022,6 +1022,9 @@ class BT {
 			.ml-1 {
 				margin-left: 8px !important;
 			}
+			#message p a {
+				display: none;
+			}
 		</style>
 <?php
 	}
@@ -1676,17 +1679,17 @@ class BT {
 									</ul>
 									<div id="<?php echo $category; ?>-all" class="tabs-panel">
 										<input type="hidden" name="tax_input[<?php echo $category; ?>][]" value="0">
-										<ul id="certification_categorychecklist" data-wp-lists="list:<?php echo $category; ?>" class="categorychecklist form-no-clear">
+										<ul id="<?php echo $category; ?>checklist" data-wp-lists="list:<?php echo $category; ?>" class="categorychecklist form-no-clear">
 <?php
 					$terms = self::get_terms_of_taxonomy($category);
 					$term_ids = explode(',', get_term_meta($term->term_id, $prefix . $category, true));
 
 					if (count($terms) > 0) {
-						foreach ($terms as $term) {
-							$checked = (in_array($term->term_id, $term_ids)) ? ' checked="checked"' : '';
+						foreach ($terms as $t) {
+							$checked = (in_array($t->term_id, $term_ids)) ? ' checked="checked"' : '';
 ?>
-											<li id="<?php echo $category; ?>-<?php echo $term->term_id; ?>">
-												<label class="selectit"><input value="<?php echo $term->term_id; ?>" type="checkbox" name="tax_input[<?php echo $category; ?>][]" id="in-<?php echo $category; ?>-<?php echo $term->term_id; ?>"<?php echo $checked; ?>> <?php echo $term->name; ?></label>
+											<li id="<?php echo $category; ?>-<?php echo $t->term_id; ?>">
+												<label class="selectit"><input value="<?php echo $t->term_id; ?>" type="checkbox" name="tax_input[<?php echo $category; ?>][]" id="in-<?php echo $category; ?>-<?php echo $t->term_id; ?>"<?php echo $checked; ?>> <?php echo $t->name; ?></label>
 											</li>
 <?php
 						}
@@ -1963,6 +1966,7 @@ class BT {
 			$role = get_role($user->roles[0]);
 			$keys = (isset(BT::$roles['add'][$role->name]) && (isset(BT::$roles['add'][$role->name]['fields']))) ? BT::$roles['add'][$role->name]['fields'] : [];
 			$prefix = self::prefix($role->name);
+			$taxonomies = (isset(BT::$roles['add'][$role->name]['taxonomies'])) ? BT::$roles['add'][$role->name]['taxonomies'] : [];
 		}
 ?>
 		<br>
@@ -1992,6 +1996,48 @@ class BT {
 								</div>
 							</div>
 						</div>
+<?php
+			if (count($taxonomies) > 0) {
+				foreach ($taxonomies as $category) {
+					$label = self::label($category);
+?>
+						<div id="<?php echo $category; ?>div" class="postbox">
+							<div class="postbox-header">
+								<h2 class="hndle ui-sortable-handle"><?php echo $label; ?></h2>
+								<div class="handle-actions hide-if-no-js"></div>
+							</div>
+							<div class="inside">
+								<div id="taxonomy-<?php echo $category; ?>" class="categorydiv">
+									<ul id="<?php echo $category; ?>-tabs" class="category-tabs">
+										<li class="tabs"><a href="#<?php echo $category; ?>-all">All <?php echo $label; ?></a></li>
+									</ul>
+									<div id="<?php echo $category; ?>-all" class="tabs-panel">
+										<input type="hidden" name="tax_input[<?php echo $category; ?>][]" value="0">
+										<ul id="<?php echo $category; ?>checklist" data-wp-lists="list:<?php echo $category; ?>" class="categorychecklist form-no-clear">
+<?php
+					$terms = self::get_terms_of_taxonomy($category);
+					$term_ids = explode(',', get_user_meta($user->ID, $prefix . $category, true));
+
+					if (count($terms) > 0) {
+						foreach ($terms as $term) {
+							$checked = (in_array($term->term_id, $term_ids)) ? ' checked="checked"' : '';
+?>
+											<li id="<?php echo $category; ?>-<?php echo $term->term_id; ?>">
+												<label class="selectit"><input value="<?php echo $term->term_id; ?>" type="checkbox" name="tax_input[<?php echo $category; ?>][]" id="in-<?php echo $category; ?>-<?php echo $term->term_id; ?>"<?php echo $checked; ?>> <?php echo $term->name; ?></label>
+											</li>
+<?php
+						}
+					}
+?>
+										</ul>
+									</div>
+								</div>
+							</div>
+						</div>
+<?php
+				}
+			}
+?>
 					</div>
 				</div>
 
@@ -2230,7 +2276,22 @@ class BT {
 						}
 					}		
 				}
+			}
 
+
+
+			if (isset($_POST['tax_input']) && is_array($_POST['tax_input'])) {
+				if (count($_POST['tax_input']) > 0) {
+					foreach ($_POST['tax_input'] as $tax => $term_ids) {
+						$term_ids = array_diff($term_ids, [0]);
+
+						update_user_meta(
+							$user_id,
+							$prefix . $tax,
+							sanitize_text_field(implode(',', $term_ids))
+						);
+					}
+				}
 			}
 		}
 	}

@@ -11,7 +11,7 @@
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
 
-define('_DEVUSER', ['admin']);
+define('_DEVUSER', ['admin', 'scott']);
 
 class BT {
 	public static $message = null;
@@ -163,19 +163,6 @@ class BT {
 
 		if (is_admin()) {
 			self::init_menu();
-
-			/*
-
-			if (get_option('auth_key') !== '') {
-				$updater = new WPU(__FILE__);
-				$updater->set_versions('6.4', '6.4.3');
-				$updater->set_username('nullstep');
-				$updater->set_repository('basic_types');
-				$updater->authorize(get_option('auth_key'));
-				$updater->initialize();
-			}
-
-			*/
 		}
 
 		// register post types
@@ -204,10 +191,18 @@ class BT {
 					'not_found' => 'No ' . $p_type . ' Found'
 				];
 
+				$supports = ['title'];
+
+				if (isset($data['_settings'])) {
+					if (isset($data['_settings']['custom_fields'])) {
+						if ($data['_settings']['custom_fields']) {
+							$supports[] = 'custom-fields';
+						}
+					}
+				}
+
 				register_post_type($type, [
-					'supports' => [
-						'title'
-					],
+					'supports' => $supports,
 					'hierarchical' => true,
 					'labels' => $labels,
 					'show_ui' => true,
@@ -228,7 +223,7 @@ class BT {
 				add_action('edited_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
 				add_action('created_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
 				add_action($tax . '_pre_add_form', __CLASS__ . '::pre_form_fields');
-				add_filter('manage_edit_' . $tax . '_columns', __CLASS__ . '::taxonomy_custom_columns');
+				add_filter('manage_edit-' . $tax . '_columns', __CLASS__ . '::taxonomy_custom_columns');
 				add_action('manage_' . $tax . '_custom_column', __CLASS__ . '::taxonomy_custom_column_views', 10, 3);
 
 				$uc_tax = self::label($tax, false, true);
@@ -280,9 +275,7 @@ class BT {
 			add_action('personal_options_update', __CLASS__ . '::update_profile_fields');
 			add_action('edit_user_profile_update', __CLASS__ . '::update_profile_fields');
 
-			foreach (self::$roles as $role => $data) {
-
-			}
+			// foreach (self::$roles as $role => $data) {}
 		}
 
 		if (_BT['bt_hide_admin'] == 'yes') {
@@ -1266,7 +1259,7 @@ class BT {
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+						echo '<input type="email" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
 					break;
 				}
 				case 'website': {
@@ -1342,9 +1335,9 @@ class BT {
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<button data-id="' . $fid . '" class="button-primary choose-file-button" style="width:5%"><i class="fa-solid fa-file"></i></button>';
+						echo '<button data-id="' . $fid . '" class="button-primary choose-file-button" style="width:5%"><i class="fa-solid fa-file" title="Select"></i></button>';
 						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:89%">';
-						echo '<button id="preview-' . $fid . '" data-id="' . $fid . '" class="button-primary view-file-button" style="width:5%"><i class="fa-solid fa-magnifying-glass"></i></button>';
+						echo '<button id="preview-' . $fid . '" data-id="' . $fid . '" class="button-primary view-file-button" style="width:5%" title="Preview"><i class="fa-solid fa-eye"></i></button>';
 						echo '<script>';
 							echo '$("#preview-' . $fid . '").on("click", function(e) {';
 								echo 'window.open("' . wp_get_upload_dir()['url'] . '/' . $fval . '", "_blank").focus();';
@@ -1393,6 +1386,45 @@ class BT {
 						echo '</script>';
 					break;
 				}
+				case 'page': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<select id="' . $fid . '" name="' . $fname . '" style="width:99%">';
+							echo '<option value="">Select ' . $keys['label'] . '&hellip;</option>';
+
+							$loop = get_posts([
+								'post_type' => 'page',
+								'post_status' => 'publish',
+								'posts_per_page' => '-1',
+								'orderby' => 'title',
+								'order' => 'ASC'
+							]);
+
+							if (count($loop) > 0) {
+								foreach ($loop as $page) {
+									$selected = ($fval == $page->ID) ? ' selected' : '';
+									$label = $page->post_title . ' (' . $page->post_name . ')';
+									echo '<option value="' . $page->ID . '"' . $selected . '>' . $label . '</option>';
+								}
+							}
+						echo '</select>';
+					break;
+				}
+				case 'button': {
+						echo '<em>' . $keys['label'] . ':</em>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<a class="button button-primary" style="margin-top:10px" href="' . get_admin_url() . 'admin.php?page=' . $keys['action'] . '">';
+							echo $keys['label'];
+						echo '</a>';
+					break;
+				}
+
 			}
 
 			echo '</div>';
@@ -1450,31 +1482,35 @@ class BT {
 		$count = 1;
 
 		foreach (BT::$posts[$type] as $field => $keys) {
+			if (!isset($keys['hidden']) || !$keys['hidden']) {
 
-			// set box class
-			switch ($count) {
-				case count(BT::$posts[$type]): {
-					$class = 'bottom';
-					break;
+				// set box class
+				switch ($count) {
+					case count(BT::$posts[$type]): {
+						$class = 'bottom';
+						break;
+					}
+					case 1: {
+						$class = 'top';
+						break;
+					}
+					default: {
+						$class = 'middle';
+					}
 				}
-				case 1: {
-					$class = 'top';
-					break;
-				}
-				default: {
-					$class = 'middle';
-				}
-			}
 ?>
 			<div class="<?php echo $class; ?>">
 <?php
-			$fval = $field_values[$field];
+				$fval = $field_values[$field];
 
-			self::gen_fields('post', $type, $field, $fval, $keys);
+				if ($field != '_settings') {
+					self::gen_fields('post', $type, $field, $fval, $keys);
+				}
 ?>
 			</div>
 <?php
-			$count++;
+				$count++;
+			}
 		}
 ?>
 		</div>
@@ -1887,6 +1923,9 @@ class BT {
 					}
 				}
 			}
+
+			wp_redirect(admin_url('term.php?taxonomy=' . $type . '&tag_ID=' . $term_id));
+			exit;
 		}
 	}
 
@@ -1907,17 +1946,19 @@ class BT {
 	// taxonomy list view columns
 
 	public static function taxonomy_custom_columns($columns) {
-		$columns['custom_column'] = 'Custom';
+		unset($columns['description']);
+		unset($columns['slug']);
+		unset($columns['posts']);
+
+		$columns = apply_filters('bt_taxonomy_columns', $columns);
 
 		return $columns;
 	}
 
-	public static function taxonomy_custom_column_views($content, $column_name, $term_id) {
-		if ($column_name == 'custom_column') {
-			$content = 'custom';
-		}
+	public static function taxonomy_custom_column_views($output, $column_key, $term_id) {
+		$output = apply_filters('bt_taxonomy_column', $output, $column_key, $term_id);
 
-		return $content;
+		return $output;
 	}
 
 	// get terms of a taxonomy
@@ -1967,6 +2008,9 @@ class BT {
 			$keys = (isset(BT::$roles['add'][$role->name]) && (isset(BT::$roles['add'][$role->name]['fields']))) ? BT::$roles['add'][$role->name]['fields'] : [];
 			$prefix = self::prefix($role->name);
 			$taxonomies = (isset(BT::$roles['add'][$role->name]['taxonomies'])) ? BT::$roles['add'][$role->name]['taxonomies'] : [];
+		}
+		else {
+			$taxonomies = [];
 		}
 ?>
 		<br>
@@ -2278,8 +2322,6 @@ class BT {
 				}
 			}
 
-
-
 			if (isset($_POST['tax_input']) && is_array($_POST['tax_input'])) {
 				if (count($_POST['tax_input']) > 0) {
 					foreach ($_POST['tax_input'] as $tax => $term_ids) {
@@ -2301,21 +2343,13 @@ class BT {
 	public static function manage_users_columns($columns) {
 		unset($columns['posts']);
 
-		//$columns['code'] = 'Code';
+		$columns = apply_filters('bt_user_columns', $columns);
 
 		return $columns;
 	}
 
 	public static function manage_users_custom_column($output, $column_key, $user_id) {
-		switch ($column_key) {
-			case 'code': {
-				$value = get_user_meta($user_id, 'code', true);
-
-				return $value;
-				break;
-			}
-			default: break;
-		}
+		$output = apply_filters('bt_user_column', $output, $column_key, $user_id);
 
 		return $output;
 	}

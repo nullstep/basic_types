@@ -756,9 +756,22 @@ class BT {
 		global $post;
 
 		$type = $post->post_type;
+		$referrer = $_SERVER['HTTP_REFERER'] ?? null;
+
+		$paged = '';
+
+		if ($referrer) {
+			$parsed_url = parse_url($referrer, PHP_URL_QUERY);
+			$params = [];
+			parse_str($parsed_url, $params);
+
+			if (isset($params['paged'])) {
+				$paged = '&paged=' . $params['paged'];
+			}
+		}
 
 		if (isset(BT::$posts[$type])) {
-			echo '<br><a class="button button-primary" href="/wp-admin/edit.php?post_type=' . $type . '">Back to ' . self::label($type) . ' List&hellip;</a><br><br>';
+			echo '<br><a class="button button-primary" href="/wp-admin/edit.php?post_type=' . $type . $paged . '">Back to ' . self::label($type) . ' List&hellip;</a><br><br>';
 		}
 	}
 

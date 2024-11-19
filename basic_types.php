@@ -1553,6 +1553,8 @@ class BT {
 					}
 				}		
 			}
+
+			do_action(self::$def['prefix'] . '_after_save_post', $post_id, $type, $_POST);
 		}
 	}
 

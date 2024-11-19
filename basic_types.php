@@ -283,6 +283,10 @@ class BT {
 			add_filter('views_users', __CLASS__ . '::modify_user_count');
 		}
 
+		// item updated messages
+
+		add_filter('post_updated_messages', __CLASS__ . '::updated_messages');
+
 		// and we're done
 	}
 
@@ -775,8 +779,33 @@ class BT {
 		}
 	}
 
+	// make prefix
+
 	public static function prefix($type) {
 		return '_' . self::$def['prefix'] . '_' . $type . '_';
+	}
+
+	// set our updated post messages
+
+	public static function updated_messages($messages) {
+		$type = get_post_type($_GET['post']);
+		$name = self::label($type, false, true);
+
+		$messages[$type] = [
+			0 => '',
+			1 => $name . ' updated.',
+			2 => 'Field updated.',
+			3 => 'Field updated.',
+			4 => $name . ' updated.',
+			5 => isset($_GET['revision']) ? $name . ' retored.' : false,
+			6 => $name . ' saved.',
+			7 => $name . ' saved.',
+			8 => $name . ' saved.',
+			9 => $name . ' scheduled.',
+			10 => $name . ' updated.'
+		];
+
+		return $messages;
 	}
 
 	//    ▄▄▄▄███▄▄▄▄       ▄████████      ███         ▄████████  

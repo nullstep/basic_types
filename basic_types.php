@@ -834,19 +834,20 @@ class BT {
 					margin-left: 20%;
 					margin-bottom: 10px;
 					width: 80%;
+
+					& input, select, textarea {
+						box-sizing: border-box;
+						display: inline-block;
+						padding: 3px;
+						vertical-align: middle;
+						margin-top: 10px;
+					}
 				}
 				& em, label {
 					display: inline-block;
 					font-weight: 700;
 					font-style: normal;
 					padding-top: 4px;
-				}
-				& input, select, textarea {
-					box-sizing: border-box;
-					display: inline-block;
-					padding: 3px;
-					vertical-align: middle;
-					margin-top: 10px;
 				}
 				& .mcw {
 					padding-top: 6px;
@@ -1239,7 +1240,7 @@ class BT {
 						echo '<select id="' . $fid . '" name="' . $fname . '" style="width:99%">';
 							echo '<option value="">Select ' . $keys['label'] . '&hellip;</option>';
 							foreach ($keys['values'] as $value => $label) {
-								$selected = ($fval == $value) ? ' selected' : '';
+								$selected = ($fval == $value || $value == $keys['default']) ? ' selected' : '';
 								echo '<option value="' . $value . '"' . $selected . '>' . $label . '</option>';
 							}
 						echo '</select>';
@@ -1292,6 +1293,19 @@ class BT {
 					echo '</div>';
 					echo '<div class="field-edit">';
 						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+					break;
+				}
+				case 'number': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					$step = (isset($keys['step'])) ? ' step="' . $keys['step'] . '"' : '';
+					$min = (isset($keys['min'])) ? ' min="' . $keys['min'] . '"' : '';
+					$max = (isset($keys['max'])) ? ' max="' . $keys['max'] . '"' : '';
+					echo '<div class="field-edit">';
+						echo '<input type="number" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '"' . $step . $min . $max . '>';
 					break;
 				}
 				case 'email': {

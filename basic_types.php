@@ -1135,16 +1135,12 @@ class BT {
 					$loop = get_posts([
 						'post_type' => $keys['linked'],
 						'post_status' => 'publish',
-						'posts_per_page' => '-1',
-						'orderby' => 'title',
-						'order' => 'ASC'
+						'post__in' => explode(',', $fval)
 					]);
 
 					if (count($loop) > 0) {
 						foreach ($loop as $post) {
-							if ($post->post_title != 'Auto Draft') {
-								echo '<div value="' . $keys['linked'] . '-' . $post->ID . '">' . $post->post_title . '</div>';
-							}
+							echo '<input type="text" readonly id="' . $keys['linked'] . '-' . $post->ID . '" value="' . $post->post_title . '" style="width:99%">';
 						}
 					}
 				}

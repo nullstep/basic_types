@@ -1118,19 +1118,15 @@ class BT {
 				echo '<div class="field-edit">';
 
 				if ($keys['linked'] == 'user') {
-					// view all linked users
+					// view linked user
 
-					$roles = (strpos($keys['role'], ',') === true) ? explode(',', $keys['role']) : [$keys['role']];
-					$role = (isset($keys['role'])) ? ['role__in' => $roles] : null;
-					$users = get_users($role);
+					$user = get_user_by('ID', $fval);
 
-					if (count($users)) {
-						foreach ($users as $user) {
-							echo '<div id="user-' . $user->ID . '" class="bt_data-view">' . $user->display_name . '</div>';
-						}
+					if ($user) {
+						echo '<input id="user-' . $user->ID . '" type="text" readonly value="' . $user->display_name . '" style="width:99%">';
 					}
 					else {
-						echo '<div id="user-none" class="bt_data-view">No data to view</div>';
+						echo '<div id="user-none">No data to view</div>';
 					}
 				}
 				else {

@@ -1152,8 +1152,9 @@ class BT {
 ?>
 				<input type="hidden" id="<?php echo $fid; ?>" name="<?php echo $fname; ?>" value="<?php echo $fval; ?>">
 <?php
-				if ($keys['type'] == 'select') {
-					// this field needs a select box
+				switch ($keys['type']) {
+					case 'select': {
+						// this field needs a select box
 ?>
 				<div class="field-title">
 					<label><?php echo $keys['label']; ?>:</label>
@@ -1213,6 +1214,17 @@ class BT {
 					});
 				</script>
 <?php
+						break;
+					}
+					case 'multi': {
+						// this is a gallery of linked types
+						echo 'wip';
+
+						break;
+					}
+					default: {
+						echo '-_-';
+					}
 				}
 			}
 		}
@@ -2091,7 +2103,7 @@ class BT {
 							</div>
 						</div>
 <?php
-			if (count($taxonomies) > 0) {
+			if (current_user_can('manage_options') && count($taxonomies) > 0) {
 				foreach ($taxonomies as $category) {
 					$label = self::label($category);
 ?>
@@ -2444,6 +2456,60 @@ class BT {
 			}
 		}
 		return $views;
+	}
+
+	// helper functions
+
+	public static function get($id, $field, $is_json = false) {
+		$data = get_post_meta($id, BT::prefix(get_post_type($id)) . $field, true);
+
+		return ($is_json) ? json_decode($data, true) : $data;
+	}
+
+	public static function set($id, $field, $value) {
+		return update_post_meta($id, BT::prefix(get_post_type($id)) . $field, $value);
+	}
+
+	public static function update($id, $field, $key, $value) {
+		$data = json_decode(get_post_meta($id, BT::prefix(get_post_type($id)) . $field, true), true);
+		$data[$key] = $value;
+
+		return update_post_meta($id, BT::prefix(get_post_type($id)) . $field, json_encode($data));
+	}
+
+	public static function delete($id, $field, $key) {
+		$data = json_decode(get_post_meta($id, BT::prefix(get_post_type($id)) . $field, true), true);
+		unset($data[$key]);
+
+		return update_post_meta($id, BT::prefix(get_post_type($id)) . $field, json_encode($data));
+	}
+
+	public static function fields($type) {
+		$fields = [];
+
+		if (count(BT::$posts[$type]) > 0) {
+			foreach (BT::$posts[$type] as $field => $keys) {
+				$fields[] = $field;
+			}
+		}
+
+		return $fields;
+	}
+
+	public static function keys($type, $field) {
+		return BT::$posts[$type][$field];
+	}
+
+	public static function make($type, $title, $author_id = null) {
+		return wp_insert_post([
+			'post_title' => $title,
+			'post_content' => '',
+			'post_status' => 'publish',
+			'post_date' => date('Y-m-d H:i:s'),
+			'post_author' => $author_id ?? wp_get_current_user()->ID,
+			'post_type' => $type,
+			'post_category' => array(0)
+		]);
 	}
 }
 

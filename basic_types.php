@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 1.4.0
+ * Version: 1.4.1
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -34,7 +34,7 @@ class BT {
 
 	public static function init() {
 		self::$def['plugin'] = 'basic_types';
-		self::$def['prefix'] = 'bt';
+		self::$def['prefix'] = strtolower(__CLASS__);
 		self::$def['url'] = plugin_dir_url(__FILE__);
 		self::$def['path'] = plugin_dir_path(__FILE__);
 
@@ -50,6 +50,10 @@ class BT {
 			'bt_icon' => [
 				'type' => 'string',
 				'default' => ''
+			],
+			'bt_transfer' => [
+				'type' => 'string',
+				'default' => 'no'
 			],
 			'bt_hide_admin' => [
 				'type' => 'string',
@@ -88,6 +92,10 @@ class BT {
 					],
 					'bt_hide_admin' => [
 						'label' => 'Hide "administrator" user accounts',
+						'type' => 'check'
+					],
+					'bt_transfer' => [
+						'label' => 'Enable Imports/Exports',
 						'type' => 'check'
 					]
 				]
@@ -143,13 +151,17 @@ class BT {
 
 		// setup settings etc.
 
-		define('_BT', BT::get_settings());
+		define('_BT', self::get_settings());
 
 		if (_BT['bt_active'] == 'yes') {
-			BT::$posts = json_decode(_BT['bt_posts'], true);
-			BT::$taxes = json_decode(_BT['bt_taxes'], true);
-			BT::$roles = json_decode(_BT['bt_roles'], true);
+			self::$posts = json_decode(_BT['bt_posts'], true);
+			self::$taxes = json_decode(_BT['bt_taxes'], true);
+			self::$roles = json_decode(_BT['bt_roles'], true);
 		}
+
+		// handle any download requests
+
+		self::handle_download();
 
 		// actions and filters
 
@@ -158,6 +170,7 @@ class BT {
 		add_action('edit_form_top', __CLASS__ . '::add_buttons_to_post_edit');
 		add_action('save_post', __CLASS__ . '::save_postdata');
 		add_action('pre_get_posts', __CLASS__ . '::sort_custom_column_query');
+		add_action('admin_footer', __CLASS__ . '::post_list_buttons');
 
 		add_filter('parent_file', __CLASS__ . '::set_current_menu');
 
@@ -165,104 +178,13 @@ class BT {
 			self::init_menu();
 		}
 
-		// register post types
+		// register our post types
 
-		if (self::check(self::$posts)) {
-			foreach (self::$posts as $type => $data) {
-				add_action('manage_' . $type . '_posts_custom_column', __CLASS__ . '::posts_custom_column_views', 5, 2);
-				add_filter('manage_' . $type . '_posts_columns', __CLASS__ . '::posts_column_views');
-				add_filter('manage_edit-' . $type . '_sortable_columns', __CLASS__ . '::set_posts_sortable_columns');
+		self::register_posts();
 
-				$uc_type = self::label($type, false, true);
-				$p_type = self::label($type);
+		// register our taxonomies
 
-				$labels = [
-					'name' => $p_type,
-					'singular_name' => $uc_type,
-					'menu_name' => $p_type,
-					'name_admin_bar' => $p_type,
-					'add_new' => 'Add New',
-					'add_new_item' => 'Add New ' . $uc_type,
-					'new_item' => 'New ' . $uc_type,
-					'edit_item' => 'Edit ' . $uc_type,
-					'view_item' => 'View ' . $uc_type,
-					'all_items' => $p_type,
-					'search_items' => 'Search ' . $p_type,
-					'not_found' => 'No ' . $p_type . ' Found'
-				];
-
-				$supports = ['title'];
-
-				if (isset($data['_settings'])) {
-					if (isset($data['_settings']['custom_fields'])) {
-						if ($data['_settings']['custom_fields']) {
-							$supports[] = 'custom-fields';
-						}
-					}
-				}
-
-				register_post_type($type, [
-					'supports' => $supports,
-					'hierarchical' => true,
-					'labels' => $labels,
-					'show_ui' => true,
-					'show_in_menu' => false,
-					'query_var' => true,
-					'has_archive' => false,
-					'rewrite' => ['slug' => $type]
-				]);
-			}
-		}
-
-		// register taxonomies
-
-		if (self::check(self::$taxes)) {
-			foreach (self::$taxes as $tax => $data) {
-				add_action($tax . '_edit_form_fields', __CLASS__ . '::edit_taxonomy_fields', 10, 2);
-				add_action($tax . '_add_form_fields', __CLASS__ . '::edit_taxonomy_fields', 10, 2);
-				add_action('edited_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
-				add_action('created_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
-				add_action($tax . '_pre_add_form', __CLASS__ . '::pre_form_fields');
-				add_filter('manage_edit-' . $tax . '_columns', __CLASS__ . '::taxonomy_custom_columns');
-				add_action('manage_' . $tax . '_custom_column', __CLASS__ . '::taxonomy_custom_column_views', 10, 3);
-
-				$uc_tax = self::label($tax, false, true);
-				$p_tax = self::label($tax);
-
-				$labels = [
-					'name' => $p_tax,
-					'singular_name' => $uc_tax,
-					'menu_name' => $p_tax,
-					'search_items' => 'Search ' . $p_tax,
-					'all_items' => 'All ' . $p_tax,
-					'parent_item' => 'Parent ' . $uc_tax,
-					'parent_item_colon' => 'Parent ' . $uc_tax . ':',
-					'edit_item' => 'Edit ' . $uc_tax, 
-					'update_item' => 'Update ' . $uc_tax,
-					'add_new_item' => 'Add New ' . $uc_tax,
-					'new_item_name' => 'New ' . $uc_tax . ' Name',
-					'not_found' => 'No ' . $p_tax . ' found',
-					'no_terms' => 'No ' . $p_tax
-				];
-
-				$hierarchical = (isset($data['hierarchical'])) ? $data['hierarchical'] : true;
-
-				register_taxonomy($tax, $data['types'], [
-					'hierarchical' => $hierarchical,
-					'labels' => $labels,
-					'show_ui' => true,
-					'show_in_menu' => false,
-					'show_in_rest' => true,
-					'show_admin_column' => true,
-					'query_var' => true,
-					'rewrite' => ['slug' => $tax],
-				]);
-
-				foreach ($data['types'] as $type) {
-					register_taxonomy_for_object_type($tax, $type);
-				}
-			}
-		}
+		self::register_taxes();
 
 		// register user meta
 
@@ -289,6 +211,102 @@ class BT {
 
 		// and we're done
 	}
+
+	public static function register_posts() {
+		if (self::check(self::$posts)) {
+			foreach (self::$posts as $type => $data) {
+				add_action('manage_' . $type . '_posts_custom_column', __CLASS__ . '::posts_custom_column_views', 5, 2);
+				add_filter('manage_' . $type . '_posts_columns', __CLASS__ . '::posts_column_views');
+				add_filter('manage_edit-' . $type . '_sortable_columns', __CLASS__ . '::set_posts_sortable_columns');
+
+				$uc_type = self::label($type, false, true);
+				$p_type = self::label($type);
+
+				$labels = [
+					'name' => $p_type,
+					'singular_name' => $uc_type,
+					'menu_name' => $p_type,
+					'name_admin_bar' => $p_type,
+					'add_new' => 'Add new',
+					'add_new_item' => 'Add new ' . $uc_type,
+					'new_item' => 'New ' . $uc_type,
+					'edit_item' => 'Edit ' . $uc_type,
+					'view_item' => 'View ' . $uc_type,
+					'all_items' => 'All ' . $p_type,
+					'search_items' => 'Search ' . $p_type,
+					'not_found' => 'No ' . $p_type . ' found',
+					'item_published' => $uc_type . ' published',
+					'item_updated' =>  $uc_type . ' updated'
+				];
+
+				register_post_type($type, [
+					'supports' => [
+						'title'
+					],
+					'hierarchical' => true,
+					'labels' => $labels,
+					'show_ui' => true,
+					'show_in_menu' => false,
+					'query_var' => true,
+					'has_archive' => false,
+					'rewrite' => ['slug' => $type]
+				]);
+			}
+		}
+	}
+
+	public static function register_taxes() {
+		if (self::check(self::$taxes)) {
+			foreach (self::$taxes as $tax => $data) {
+				add_action($tax . '_edit_form_fields', __CLASS__ . '::edit_taxonomy_fields', 10, 2);
+				add_action($tax . '_add_form_fields', __CLASS__ . '::edit_taxonomy_fields', 10, 2);
+				add_action('edited_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
+				add_action('created_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
+				add_action($tax . '_pre_add_form', __CLASS__ . '::taxonomy_list_buttons');
+				add_filter('manage_edit-' . $tax . '_columns', __CLASS__ . '::taxonomy_custom_columns');
+				add_action('manage_' . $tax . '_custom_column', __CLASS__ . '::taxonomy_custom_column_views', 10, 3);
+
+				$uc_tax = self::label($tax, false, true);
+				$p_tax = self::label($tax);
+
+				$labels = [
+					'name' => $p_tax,
+					'singular_name' => $uc_tax,
+					'menu_name' => $p_tax,
+					'search_items' => 'Search ' . $p_tax,
+					'all_items' => 'All ' . $p_tax,
+					'parent_item' => 'Parent ' . $uc_tax,
+					'parent_item_colon' => 'Parent ' . $uc_tax . ':',
+					'edit_item' => 'Edit ' . $uc_tax, 
+					'update_item' => 'Update ' . $uc_tax,
+					'add_new_item' => 'Add new ' . $uc_tax,
+					'new_item_name' => 'New ' . $uc_tax . ' Name',
+					'not_found' => 'No ' . $p_tax . ' found',
+					'no_terms' => 'No ' . $p_tax,
+					'item_published' => $uc_tax . ' published',
+					'item_updated' =>  $uc_tax . ' updated'
+				];
+
+				$hierarchical = (isset($data['hierarchical'])) ? $data['hierarchical'] : true;
+
+				register_taxonomy($tax, $data['types'], [
+					'hierarchical' => $hierarchical,
+					'labels' => $labels,
+					'show_ui' => true,
+					'show_in_menu' => false,
+					'show_in_rest' => true,
+					'show_admin_column' => true,
+					'query_var' => true,
+					'rewrite' => ['slug' => $tax],
+				]);
+
+				foreach ($data['types'] as $type) {
+					register_taxonomy_for_object_type($tax, $type);
+				}
+			}
+		}
+	}
+
 
 	//     ▄████████     ▄███████▄   ▄█   
 	//    ███    ███    ███    ███  ███   
@@ -655,7 +673,9 @@ class BT {
 	}
 
 	public static function admin_scripts() {
-		wp_enqueue_style('fa', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.6.0/css/all.min.css');
+		if (_BT['bt_fa'] == 'yes') {
+			wp_enqueue_style('fa', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css');
+		}
 
 		$screen = get_current_screen();
 
@@ -774,7 +794,7 @@ class BT {
 			}
 		}
 
-		if (isset(BT::$posts[$type])) {
+		if (isset(self::$posts[$type])) {
 			echo '<br><a class="button button-primary" href="/wp-admin/edit.php?post_type=' . $type . $paged . '">Back to ' . self::label($type) . ' List&hellip;</a><br><br>';
 		}
 	}
@@ -807,6 +827,91 @@ class BT {
 
 		return $messages;
 	}
+
+	public static function importer($type, $p_or_t) {
+?>
+		<style>
+			.progress {
+				display: none;
+				position: relative;
+				top: -4px;
+				margin-left: 6px;
+				border-radius: 3px;
+				padding-top: 4px;
+				border: 1px solid var(--primary-brand-colour);
+				width: 120px;
+				height: 24px;
+				text-align: center;
+			}
+		</style>
+		<script>
+			function bt_csv(content) {
+				const rows = content.split('\n');
+				const headers = rows[0].split(',');
+
+				const data = rows.slice(1).map(row => {
+					const values = row.split(',');
+
+					return headers.reduce((obj, header, index) => {
+						obj[header.trim()] = values[index]?.trim();
+						return obj;
+					}, {});
+				});
+
+				return data;
+			}
+			function bt_ajax(data, i = 0) {
+				const t = data.length - 1;
+				if (i == t) {
+					jQuery('.progress').text('Done').fadeOut(200);
+					window.location.reload(true);
+					return;
+				}
+
+				let v = Math.trunc((i / t) * 100);
+				jQuery('.progress').css('display', 'inline-block').text(v + '% (' + i + ' of ' + t + ')');
+
+				jQuery.ajax({
+					url: ajaxurl,
+					type: 'POST',
+					data: {
+						action: 'bt_ajax',
+						hash: _bt.hash,
+						payload: {
+							port: '<?php echo $p_or_t; ?>',
+							type: '<?php echo $type; ?>',
+							cmd: 'import',
+							data: data[i]
+						}
+					},
+					success: function(response) {
+						bt_ajax(data, i + 1);
+					},
+					error: function(xhr, status, error) {
+						alert('There was an error processing the import: ' + error);
+					}
+				});
+			}
+			function bt_read(file) {
+				if (file) {
+					const reader = new FileReader();
+					reader.onload = function(e) {
+						const content = e.target.result;
+						const rows = bt_csv(content);
+						var p = 0, c = rows.length - 1, r = false;
+
+						jQuery('#p-csv-f').val('');
+
+						bt_ajax(rows, 0);
+					};
+
+					reader.readAsText(file);
+				}
+			}
+		</script>
+<?php
+	}
+
 
 	//    ▄▄▄▄███▄▄▄▄       ▄████████      ███         ▄████████  
 	//  ▄██▀▀▀███▀▀▀██▄    ███    ███  ▀█████████▄    ███    ███  
@@ -1501,7 +1606,7 @@ class BT {
 	//   ▄████▀        ▀██████▀    ▄████████▀      ▄████▀
 
 	public static function add_metaboxes() {
-		foreach (BT::$posts as $type => $fields) {
+		foreach (self::$posts as $type => $fields) {
 			add_meta_box(
 				strtolower(__CLASS__) . '_meta_box',
 				'Information',
@@ -1521,7 +1626,7 @@ class BT {
 		$new_post = ($admin_path == 'post-new.php') ? true : false;
 
 		$prefix = self::prefix($type);
-		$keys = BT::$posts[$type];
+		$keys = self::$posts[$type];
 
 		if (count($keys) > 0) {
 			foreach ($keys as $key => $details) {
@@ -1541,12 +1646,12 @@ class BT {
 <?php
 		$count = 1;
 
-		foreach (BT::$posts[$type] as $field => $keys) {
+		foreach (self::$posts[$type] as $field => $keys) {
 			if (!isset($keys['hidden']) || !$keys['hidden']) {
 
 				// set box class
 				switch ($count) {
-					case count(BT::$posts[$type]): {
+					case count(self::$posts[$type]): {
 						$class = 'bottom';
 						break;
 					}
@@ -1685,6 +1790,32 @@ class BT {
 		return $columns;
 	}
 
+	// add buttons to post list page
+
+	public static function post_list_buttons() {
+		global $pagenow;
+
+		$type = isset($_GET['post_type']) ? $_GET['post_type'] : null;
+
+		if ($type && isset(self::$posts[$type])) {
+			self::importer($type, 'post');
+?>
+			<script>
+				jQuery(function($) {
+					let e = $('.page-title-action');
+					let b = ' &nbsp; &nbsp; <a href="<?php echo get_admin_url() . 'admin.php?action=download&type=' . $type; ?>" class="page-title-action">Export <?php echo self::label($type); ?> as CSV</a> <input id="p-csv-f" type="file" class="hidden"><span id="p-csv" class="page-title-action">Import <?php echo self::label($type); ?></span><div class="progress">&nbsp;</div>';
+					e.addClass('primary').after(b);
+					$('#p-csv').on('click', function(e) {
+						$('#p-csv-f').click();
+					});
+					$('#p-csv-f').on('change', function(e) {
+						bt_read($('#p-csv-f').prop('files')[0]);
+					});
+				});
+			</script>
+<?php
+		}
+	}
 
 
 	//      ███         ▄████████  ▀████    ▐████▀  
@@ -1718,14 +1849,14 @@ class BT {
 		$field_values = [];
 
 		$prefix = self::prefix($taxonomy);
-		$keys = BT::$taxes[$taxonomy]['fields'];
+		$keys = self::$taxes[$taxonomy]['fields'];
 		$label = ucwords(strtolower(str_replace('_', ' ', $taxonomy)));
 
-		$hierarchical = BT::$taxes[$taxonomy]['hierarchical'];
-		$show_description = BT::$taxes[$taxonomy]['description'];
-		$show_slug = BT::$taxes[$taxonomy]['slug'];
+		$hierarchical = self::$taxes[$taxonomy]['hierarchical'];
+		$show_description = self::$taxes[$taxonomy]['description'];
+		$show_slug = self::$taxes[$taxonomy]['slug'];
 
-		$taxonomies = BT::$taxes[$taxonomy]['taxonomies'] ?? [];
+		$taxonomies = self::$taxes[$taxonomy]['taxonomies'] ?? [];
 
 		if ($action != 'list') {
 ?>
@@ -1911,11 +2042,11 @@ class BT {
 <?php
 			}
 
-			foreach (BT::$taxes[$taxonomy]['fields'] as $field => $keys) {
+			foreach (self::$taxes[$taxonomy]['fields'] as $field => $keys) {
 
 				// set box class
 				switch ($count) {
-					case count(BT::$taxes[$taxonomy]['fields']): {
+					case count(self::$taxes[$taxonomy]['fields']): {
 						$class = 'bottom';
 						break;
 					}
@@ -1991,20 +2122,6 @@ class BT {
 		}
 	}
 
-	// add 'new' button to custom taxonomy list page
-
-	public static function pre_form_fields($taxonomy) {
-		$screen = get_current_screen();
-		$action = $_GET['action'] ?? 'list';
-
-		if ($screen->base == 'edit-tags' && $action != 'new') {
-			if ($taxonomy && isset(BT::$taxes[$taxonomy])) {
-				$button = " <a class='page-title-action' href='/wp-admin/edit-tags.php?taxonomy=" . $taxonomy . "&action=new'>Add New</a>";
-				echo '<script>jQuery(function($){$("h1.wp-heading-inline").after("' . $button . '");});</script>';
-			}
-		}
-	}
-
 	// taxonomy list view columns
 
 	public static function taxonomy_custom_columns($columns) {
@@ -2028,7 +2145,7 @@ class BT {
 	public static function get_terms_of_taxonomy($taxonomy) {
 		$terms = [];
 
-		if (isset(BT::$taxes[$taxonomy])) {
+		if (isset(self::$taxes[$taxonomy])) {
 			$terms = get_terms($taxonomy, [
 				'hide_empty' => false
 			]);
@@ -2036,6 +2153,35 @@ class BT {
 
 		return $terms;
 	}
+
+	// add buttons to custom taxonomy list page
+
+	public static function taxonomy_list_buttons($taxonomy) {
+		$screen = get_current_screen();
+		$action = $_GET['action'] ?? 'list';
+
+		if ($screen->base == 'edit-tags' && $action != 'new') {
+			if ($taxonomy && isset(self::$taxes[$taxonomy])) {
+				self::importer($taxonomy, 'taxonomy');
+?>
+				<script>
+					jQuery(function($) {
+						let e = $('h1.wp-heading-inline');
+						let b = '<a class="page-title-action primary" href="/wp-admin/edit-tags.php?taxonomy=<?php echo $taxonomy; ?>&action=new">Add New</a> &nbsp; &nbsp; <a href="<?php echo get_admin_url(); ?>admin.php?action=download&type=<?php echo $taxonomy; ?>" class="page-title-action">Export <?php echo self::label($taxonomy); ?> as CSV</a> <input id="t-csv-f" type="file" class="hidden"><span id="t-csv" class="page-title-action">Import <?php echo self::label($taxonomy); ?></span><div class="progress">&nbsp;</div>';
+						e.after(b);
+						$('#t-csv').on('click', function(e) {
+							$('#t-csv-f').click();
+						});
+						$('#t-csv-f').on('change', function(e) {
+							bt_read($('#t-csv-f').prop('files')[0]);
+						});
+					});
+				</script>
+<?php
+			}
+		}
+	}
+
 
 	//  ███    █▄      ▄████████     ▄████████     ▄████████  
 	//  ███    ███    ███    ███    ███    ███    ███    ███  
@@ -2067,9 +2213,9 @@ class BT {
 
 		if ($action !== 'new') {
 			$role = get_role($user->roles[0]);
-			$keys = (isset(BT::$roles['add'][$role->name]) && (isset(BT::$roles['add'][$role->name]['fields']))) ? BT::$roles['add'][$role->name]['fields'] : [];
+			$keys = (isset(self::$roles['add'][$role->name]) && (isset(self::$roles['add'][$role->name]['fields']))) ? self::$roles['add'][$role->name]['fields'] : [];
 			$prefix = self::prefix($role->name);
-			$taxonomies = (isset(BT::$roles['add'][$role->name]['taxonomies'])) ? BT::$roles['add'][$role->name]['taxonomies'] : [];
+			$taxonomies = (isset(self::$roles['add'][$role->name]['taxonomies'])) ? self::$roles['add'][$role->name]['taxonomies'] : [];
 		}
 		else {
 			$taxonomies = [];
@@ -2268,7 +2414,7 @@ class BT {
 									</div>
 <?php
 		if ($action != 'new') {
-			$class = (isset(BT::$roles['add'][$role->name]) && isset(BT::$roles['add'][$role->name]['fields'])) ? 'middle' : 'bottom';
+			$class = (isset(self::$roles['add'][$role->name]) && isset(self::$roles['add'][$role->name]['fields'])) ? 'middle' : 'bottom';
 ?>
 									<div class="<?php echo $class; ?>">
 										<div class="field-title">
@@ -2295,7 +2441,7 @@ class BT {
 			// we are editing a user, so a role is defined
 			// therefore we can show the related meta fields
 
-			if (isset(BT::$roles['add'][$role->name]) && isset(BT::$roles['add'][$role->name]['fields'])) {
+			if (isset(self::$roles['add'][$role->name]) && isset(self::$roles['add'][$role->name]['fields'])) {
 				// this role has some meta fields
 
 				if (count($keys) > 0) {
@@ -2306,11 +2452,11 @@ class BT {
 
 				$count = 1;
 
-				foreach (BT::$roles['add'][$role->name]['fields'] as $field => $keys) {
+				foreach (self::$roles['add'][$role->name]['fields'] as $field => $keys) {
 
 					// set box class
 					switch ($count) {
-						case count(BT::$roles['add'][$role->name]['fields']): {
+						case count(self::$roles['add'][$role->name]['fields']): {
 							$class = 'bottom';
 							break;
 						}
@@ -2367,9 +2513,9 @@ class BT {
 			$user = get_user_by('id', $user_id);
 			$role = get_role($user->roles[0]);
 
-			if (isset(BT::$roles['add'][$role->name]) && isset(BT::$roles['add'][$role->name]['fields'])) {
+			if (isset(self::$roles['add'][$role->name]) && isset(self::$roles['add'][$role->name]['fields'])) {
 				$prefix = self::prefix($role->name);
-				$keys = BT::$roles['add'][$role->name]['fields'];
+				$keys = self::$roles['add'][$role->name]['fields'];
 
 				if ($keys) {
 					foreach ($keys as $key => $details) {
@@ -2461,34 +2607,42 @@ class BT {
 	// helper functions
 
 	public static function get($id, $field, $is_json = false) {
-		$data = get_post_meta($id, BT::prefix(get_post_type($id)) . $field, true);
+		$type = get_post_type($id);
+
+		if (!$type) {
+			$type = get_term($id)->taxonomy;
+			$data = get_term_meta($id, self::prefix($type) . $field, true);
+		}
+		else {
+			$data = get_post_meta($id, self::prefix($type) . $field, true);
+		}
 
 		return ($is_json) ? json_decode($data, true) : $data;
 	}
 
 	public static function set($id, $field, $value) {
-		return update_post_meta($id, BT::prefix(get_post_type($id)) . $field, $value);
+		return update_post_meta($id, self::prefix(get_post_type($id)) . $field, $value);
 	}
 
 	public static function update($id, $field, $key, $value) {
-		$data = json_decode(get_post_meta($id, BT::prefix(get_post_type($id)) . $field, true), true);
+		$data = json_decode(get_post_meta($id, self::prefix(get_post_type($id)) . $field, true), true);
 		$data[$key] = $value;
 
-		return update_post_meta($id, BT::prefix(get_post_type($id)) . $field, json_encode($data));
+		return update_post_meta($id, self::prefix(get_post_type($id)) . $field, json_encode($data));
 	}
 
 	public static function delete($id, $field, $key) {
-		$data = json_decode(get_post_meta($id, BT::prefix(get_post_type($id)) . $field, true), true);
+		$data = json_decode(get_post_meta($id, self::prefix(get_post_type($id)) . $field, true), true);
 		unset($data[$key]);
 
-		return update_post_meta($id, BT::prefix(get_post_type($id)) . $field, json_encode($data));
+		return update_post_meta($id, self::prefix(get_post_type($id)) . $field, json_encode($data));
 	}
 
 	public static function fields($type) {
 		$fields = [];
 
-		if (count(BT::$posts[$type]) > 0) {
-			foreach (BT::$posts[$type] as $field => $keys) {
+		if (count(self::$posts[$type]) > 0) {
+			foreach (self::$posts[$type] as $field => $keys) {
 				$fields[] = $field;
 			}
 		}
@@ -2497,7 +2651,7 @@ class BT {
 	}
 
 	public static function keys($type, $field) {
-		return BT::$posts[$type][$field];
+		return self::$posts[$type][$field];
 	}
 
 	public static function make($type, $title, $author_id = null) {
@@ -2510,6 +2664,244 @@ class BT {
 			'post_type' => $type,
 			'post_category' => array(0)
 		]);
+	}
+
+
+	//     ▄████████       ▄█     ▄████████  ▀████    ▐████▀  
+	//    ███    ███      ███    ███    ███    ███▌   ████▀   
+	//    ███    ███      ███    ███    ███     ███  ▐███     
+	//    ███    ███      ███    ███    ███     ▀███▄███▀     
+	//  ▀███████████      ███  ▀███████████     ████▀██▄      
+	//    ███    ███      ███    ███    ███    ▐███  ▀███     
+	//    ███    ███  █▄ ▄███    ███    ███   ▄███     ███▄   
+	//    ███    █▀   ▀▀▀▀▀▀     ███    █▀   ████       ███▄
+
+	public static function ajax() {
+		$hash = $_POST['hash'] ?? null;
+		$check = hash('sha1', 'e' . wp_get_current_user()->ID);
+
+		if (!$hash || $hash !== $check) {
+			wp_send_json_error('security error');
+			die;
+		}
+
+		$data = $_POST['payload'] ?? null;
+
+		if (!$data) {
+			wp_send_json_error('no data');
+			die;
+		}
+
+		switch ($data['cmd']) {
+			case 'import': {
+				$type = $data['type'];
+				$row = $data['data'];
+
+				if (!is_array($row)) {
+					wp_send_json_error('row is not an array');
+					die;
+				}
+
+				$id = array_shift($row);
+				$title = array_shift($row);
+
+				switch ($data['port']) {
+					case 'post': {
+						if (is_int($id) && get_post($id)) {
+							// we are updating a post
+
+							wp_update_post([
+								'ID' => $id,
+								'post_title' => $title
+							]);
+
+							$result = 'updated post';	
+						}
+						else {
+							// we are adding a new post
+
+							$id = wp_insert_post([
+								'post_title' => $title,
+								'post_content' => '',
+								'post_status' => 'publish',
+								'post_date' => date('Y-m-d H:i:s'),
+								'post_author' => wp_get_current_user()->ID,
+								'post_type' => $type,
+								'post_category' => array(0)
+							]);
+
+							$result = 'added post';
+						}
+
+						if (count($row) > 0) {
+							foreach ($row as $field => $value) {
+								update_post_meta($id, BT::prefix($type) . $field, $value);
+							}
+						}
+
+						wp_send_json_success($result);
+						die;
+					}
+					case 'taxonomy': {
+						if (is_int($id) && get_term($id)) {
+							// we are updating a term
+
+							wp_update_term($id, $type, [
+								'name' => $title
+							]);
+
+							$result = 'updated term';
+						}
+						else {
+							// we are adding a new term
+
+							$term = wp_create_term($title, $type);
+							$id = $term['term_id'];
+
+							$result = 'added term';
+						}
+
+						if (count($row) > 0) {
+							foreach ($row as $field => $value) {
+								update_term_meta($id, BT::prefix($type) . $field, $value);
+							}
+						}
+
+						wp_send_json_success($result);
+						die;
+					}
+					default: {
+						wp_send_json_error('unsupported type');
+						die;
+					}
+				}
+
+				break;
+			}
+			default: {
+				wp_send_json_error('unsupported command');
+				die;
+			}
+		}
+
+		die;
+	}
+
+
+	//  ████████▄    ▄██████▄    ▄█     █▄   ███▄▄▄▄▄    
+	//  ███   ▀███  ███    ███  ███     ███  ███▀▀▀▀██▄  
+	//  ███    ███  ███    ███  ███     ███  ███    ███  
+	//  ███    ███  ███    ███  ███     ███  ███    ███  
+	//  ███    ███  ███    ███  ███     ███  ███    ███  
+	//  ███    ███  ███    ███  ███     ███  ███    ███  
+	//  ███   ▄███  ███    ███  ███ ▄█▄ ███  ███    ███  
+	//  ████████▀    ▀██████▀    ▀███▀███▀    ▀█    █▀
+
+	//   ▄█         ▄██████▄      ▄████████  ████████▄   
+	//  ███        ███    ███    ███    ███  ███   ▀███  
+	//  ███        ███    ███    ███    ███  ███    ███  
+	//  ███        ███    ███    ███    ███  ███    ███  
+	//  ███        ███    ███  ▀███████████  ███    ███  
+	//  ███        ███    ███    ███    ███  ███    ███  
+	//  ███▌    ▄  ███    ███    ███    ███  ███   ▄███  
+	//  █████▄▄██   ▀██████▀     ███    █▀   ████████▀
+
+	public static function handle_download() {
+		if (isset($_GET['action']) && $_GET['action'] === 'download') {
+
+			if (!is_user_logged_in()) {
+				wp_die('You must be logged in to access this file');
+			}
+
+			$type = $_GET['type'] ?? null;
+
+			if (!$type) {
+				wp_die('No type requested');
+			}
+
+			list($name, $data) = self::get_data($type);
+
+			if ($name && $data) {
+				header('Content-Type: application/octet-stream');
+				header('Content-Disposition: attachment; filename="' . $name . '"');
+
+				echo $data;
+				exit;
+			}
+		}
+	}
+
+	public static function get_data($type) {
+		$result = apply_filters(strtolower(__CLASS__) . '_download_data', false, $type);
+
+		if ($result) {
+			$name = $result['name'];
+			$data = $result['data'];
+		}
+		else {
+			$cols = ['id', 'title'];
+			$p_or_t = null;
+
+			if (isset(self::$posts[$type])) {
+				foreach (self::$posts[$type] as $field => $keys) {
+					$cols[] = $field;
+				}
+
+				$p_or_t = 'post';
+
+				$objects = get_posts([
+					'post_type' => $type,
+					'post_status' => 'publish',
+					'posts_per_page' => '-1',
+					'orderby' => 'id',
+					'order' => 'ASC'
+				]);
+			}
+
+			if (isset(self::$taxes[$type])) {
+				foreach (self::$taxes[$type]['fields'] as $field => $keys) {
+					$cols[] = $field;
+				}
+
+				$p_or_t = 'taxonomy';
+
+				// we need to register our
+				// taxonomies here because
+				// wordpress is retarded -_-
+
+				self::register_taxes();
+
+				$objects = get_terms([
+					'taxonomy' => $type,
+					'hide_empty' => false
+				]);
+			}
+
+			$name = $type . '.csv';
+			$data = implode(',', $cols) . "\n";
+
+			if (count($objects) > 0 && $p_or_t) {
+				foreach ($objects as $object) {
+					$id = ($p_or_t == 'post') ? $object->ID : $object->term_id;
+
+					$row = [];
+					$row[] = $id;
+					$row[] = ($p_or_t == 'post') ? $object->post_title : $object->name;
+
+					$col_count = count($cols) - 2;
+
+					if ($col_count > 0) {
+						for ($c = 0; $c < $col_count; $c++) {
+							$row[] = self::get($id, $cols[$c + 2]);
+						}
+					}
+
+					$data .= implode(',', $row) . "\n";
+				}
+			}
+		}
+
+		return [$name, $data];
 	}
 }
 

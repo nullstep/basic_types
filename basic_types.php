@@ -673,10 +673,6 @@ class BT {
 	}
 
 	public static function admin_scripts() {
-		if (_BT['bt_fa'] == 'yes') {
-			wp_enqueue_style('fa', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css');
-		}
-
 		$screen = get_current_screen();
 
 		if (null === $screen) {

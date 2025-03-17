@@ -11,6 +11,7 @@
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
 
+define('_PLUGIN', 'basic_types');
 define('_DEVUSER', ['admin', 'scott']);
 
 class BT {
@@ -33,10 +34,11 @@ class BT {
 	//  █▀     ▀█    █▀   █▀       ▄████▀
 
 	public static function init() {
-		self::$def['plugin'] = 'basic_types';
+		self::$def['plugin'] = _PLUGIN;
 		self::$def['prefix'] = strtolower(__CLASS__);
 		self::$def['url'] = plugin_dir_url(__FILE__);
 		self::$def['path'] = plugin_dir_path(__FILE__);
+		self::$def['nonce'] = wp_create_nonce(_PLUGIN);
 
 		self::$def['args'] = [
 			'bt_active' => [
@@ -58,6 +60,10 @@ class BT {
 			'bt_hide_admin' => [
 				'type' => 'string',
 				'default' => 'yes'
+			],
+			'bt_fa' => [
+				'type' => 'string',
+				'default' => 'no'
 			],
 			'bt_posts' => [
 				'type' => 'string',
@@ -96,6 +102,10 @@ class BT {
 					],
 					'bt_transfer' => [
 						'label' => 'Enable Imports/Exports',
+						'type' => 'check'
+					],
+					'bt_fa' => [
+						'label' => 'Include Font Awesome in WP Admin',
 						'type' => 'check'
 					]
 				]
@@ -171,6 +181,7 @@ class BT {
 		add_action('save_post', __CLASS__ . '::save_postdata');
 		add_action('pre_get_posts', __CLASS__ . '::sort_custom_column_query');
 		add_action('admin_footer', __CLASS__ . '::post_list_buttons');
+		add_action('admin_head', __CLASS__ . '::set_vars');
 
 		add_filter('parent_file', __CLASS__ . '::set_current_menu');
 
@@ -186,7 +197,7 @@ class BT {
 
 		self::register_taxes();
 
-		// register user meta
+		// register user meta management
 
 		if (self::check(self::$roles)) {
 			add_filter('manage_users_columns', __CLASS__ . '::manage_users_columns', 10, 1);
@@ -608,6 +619,13 @@ class BT {
 									echo '<input id="' . $fid . '" type="text" name="' . $fid . '">';
 									break;
 								}
+								case 'number': {
+									echo '<label for="' . $fid . '">';
+										echo $field['label'] . ':';
+									echo '</label>';
+									echo '<input id="' . $fid . '" type="number" step="' . $field['step'] . '" min="' . $field['min'] . '" max="' . $field['max'] . '" name="' . $fid . '">';
+									break;
+								}
 								case 'select': {
 									echo '<label for="' . $fid . '">';
 										echo $field['label'] . ':';
@@ -675,6 +693,10 @@ class BT {
 	public static function admin_scripts() {
 		$screen = get_current_screen();
 
+		if (_BT['bt_fa'] == 'yes') {
+			wp_enqueue_style('fontawesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css', '', '6.7.2', 'all');
+		}
+
 		if (null === $screen) {
 			return;
 		}
@@ -705,6 +727,14 @@ class BT {
 
 		return $parent_file;
 	}
+
+		public static function set_vars() {
+		$user = wp_get_current_user();
+?>
+		<script>const _bt = { hash: '<?php echo hash('sha1', 'e' . $user->ID); ?>', nonce: '<?php echo self::$def['nonce']; ?>' };</script>
+<?php
+	}
+
 
 	//   ▄████████   ▄██████▄   ████████▄      ▄████████  
 	//  ███    ███  ███    ███  ███   ▀███    ███    ███  
@@ -745,9 +775,13 @@ class BT {
 				'personnel'
 			];
 
+			$y_not = [
+				'holiday'
+			];
+
 			switch (substr($string, -1)) {
 				case 'y': {
-					$string = rtrim($string, 'y') . 'ies';
+					$string = (in_array(strtolower(trim($string)), $y_not) ? $string . 's' : rtrim($string, 'y') . 'ies');
 					break;
 				}
 				case 'h':
@@ -770,31 +804,6 @@ class BT {
 		return $string;
 	}
 
-	// add back to... button on type edit page
-
-	public static function add_buttons_to_post_edit() {
-		global $post;
-
-		$type = $post->post_type;
-		$referrer = $_SERVER['HTTP_REFERER'] ?? null;
-
-		$paged = '';
-
-		if ($referrer) {
-			$parsed_url = parse_url($referrer, PHP_URL_QUERY);
-			$params = [];
-			parse_str($parsed_url, $params);
-
-			if (isset($params['paged'])) {
-				$paged = '&paged=' . $params['paged'];
-			}
-		}
-
-		if (isset(self::$posts[$type])) {
-			echo '<br><a class="button button-primary" href="/wp-admin/edit.php?post_type=' . $type . $paged . '">Back to ' . self::label($type) . ' List&hellip;</a><br><br>';
-		}
-	}
-
 	// make prefix
 
 	public static function prefix($type) {
@@ -813,7 +822,7 @@ class BT {
 			2 => 'Field updated.',
 			3 => 'Field updated.',
 			4 => $name . ' updated.',
-			5 => isset($_GET['revision']) ? $name . ' retored.' : false,
+			5 => isset($_GET['revision']) ? $name . ' restored.' : false,
 			6 => $name . ' saved.',
 			7 => $name . ' saved.',
 			8 => $name . ' saved.',
@@ -824,91 +833,7 @@ class BT {
 		return $messages;
 	}
 
-	public static function importer($type, $p_or_t) {
-?>
-		<style>
-			.progress {
-				display: none;
-				position: relative;
-				top: -4px;
-				margin-left: 6px;
-				border-radius: 3px;
-				padding-top: 4px;
-				border: 1px solid var(--primary-brand-colour);
-				width: 120px;
-				height: 24px;
-				text-align: center;
-			}
-		</style>
-		<script>
-			function bt_csv(content) {
-				const rows = content.split('\n');
-				const headers = rows[0].split(',');
-
-				const data = rows.slice(1).map(row => {
-					const values = row.split(',');
-
-					return headers.reduce((obj, header, index) => {
-						obj[header.trim()] = values[index]?.trim();
-						return obj;
-					}, {});
-				});
-
-				return data;
-			}
-			function bt_ajax(data, i = 0) {
-				const t = data.length - 1;
-				if (i == t) {
-					jQuery('.progress').text('Done').fadeOut(200);
-					window.location.reload(true);
-					return;
-				}
-
-				let v = Math.trunc((i / t) * 100);
-				jQuery('.progress').css('display', 'inline-block').text(v + '% (' + i + ' of ' + t + ')');
-
-				jQuery.ajax({
-					url: ajaxurl,
-					type: 'POST',
-					data: {
-						action: 'bt_ajax',
-						hash: _bt.hash,
-						payload: {
-							port: '<?php echo $p_or_t; ?>',
-							type: '<?php echo $type; ?>',
-							cmd: 'import',
-							data: data[i]
-						}
-					},
-					success: function(response) {
-						bt_ajax(data, i + 1);
-					},
-					error: function(xhr, status, error) {
-						alert('There was an error processing the import: ' + error);
-					}
-				});
-			}
-			function bt_read(file) {
-				if (file) {
-					const reader = new FileReader();
-					reader.onload = function(e) {
-						const content = e.target.result;
-						const rows = bt_csv(content);
-						var p = 0, c = rows.length - 1, r = false;
-
-						jQuery('#p-csv-f').val('');
-
-						bt_ajax(rows, 0);
-					};
-
-					reader.readAsText(file);
-				}
-			}
-		</script>
-<?php
-	}
-
-
+	
 	//    ▄▄▄▄███▄▄▄▄       ▄████████      ███         ▄████████  
 	//  ▄██▀▀▀███▀▀▀██▄    ███    ███  ▀█████████▄    ███    ███  
 	//  ███   ███   ███    ███    █▀      ▀███▀▀██    ███    ███  
@@ -1244,6 +1169,9 @@ class BT {
 							echo '<input type="text" readonly id="' . $keys['linked'] . '-' . $post->ID . '" value="' . $post->post_title . '" style="width:99%">';
 						}
 					}
+					else {
+						echo '<input type="text" readonly id="' . $keys['linked'] . '-' . $post->ID . '" value="" style="width:99%">';
+					}
 				}
 
 				echo '</div>';
@@ -1398,6 +1326,22 @@ class BT {
 					echo '</div>';
 					echo '<div class="field-edit">';
 						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+					break;
+				}
+				case 'barcode': {
+					require_once(get_template_directory() . '/inc/barcode.php');
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:49%">';
+						if ($fval != '') {
+							$barcode = new Barcode();
+							$obj = $barcode->getBarcodeObj($keys['version'], $fval, -2, -37, 'black', [0, 0, 0, 0])->setBackgroundColor('white');
+						}
+						echo '<div style="position:relative;display:inline-block;width:49%;top:19px;left:20px">' . (($fval != '') ? $obj->getSvgCode() : '') . '</div>';
 					break;
 				}
 				case 'number': {
@@ -1739,7 +1683,7 @@ class BT {
 			unset($columns['date']);
 
 			foreach (self::$posts[$type] as $field => $keys) {
-				if ($keys['column']) {
+				if (isset($keys['column']) && $keys['column']) {
 					$columns[$field] = $keys['label'];
 				}
 			}
@@ -1810,6 +1754,31 @@ class BT {
 				});
 			</script>
 <?php
+		}
+	}
+
+	// add back to... button on type edit page
+
+	public static function add_buttons_to_post_edit() {
+		global $post;
+
+		$type = $post->post_type;
+		$referrer = $_SERVER['HTTP_REFERER'] ?? null;
+
+		$paged = '';
+
+		if ($referrer) {
+			$parsed_url = parse_url($referrer, PHP_URL_QUERY);
+			$params = [];
+			parse_str($parsed_url, $params);
+
+			if (isset($params['paged'])) {
+				$paged = '&paged=' . $params['paged'];
+			}
+		}
+
+		if (isset(self::$posts[$type])) {
+			echo '<br><a class="button button-primary" href="/wp-admin/edit.php?post_type=' . $type . $paged . '">Back to ' . self::label($type) . ' List&hellip;</a><br><br>';
 		}
 	}
 
@@ -1906,7 +1875,7 @@ class BT {
 										<input type="hidden" name="tax_input[<?php echo $category; ?>][]" value="0">
 										<ul id="<?php echo $category; ?>checklist" data-wp-lists="list:<?php echo $category; ?>" class="categorychecklist form-no-clear">
 <?php
-					$terms = self::get_terms_of_taxonomy($category);
+					$terms = self::get_terms($category);
 					$term_ids = explode(',', get_term_meta($term->term_id, $prefix . $category, true));
 
 					if (count($terms) > 0) {
@@ -1995,11 +1964,12 @@ class BT {
 								</script>
 								<div class="inside">
 <?php
-			$count = 1;
+			$count = 0;
 
 			if ($show_slug) {
 				$count++;
 ?>
+									<p><?php echo $count; ?> of <?php echo count(self::$taxes[$taxonomy]['fields']); ?></p>
 									<div class="top">
 										<div class="field-title">
 											<label>Slug:</label>
@@ -2014,6 +1984,7 @@ class BT {
 				$count++;
 				$class = ($count == 1) ? 'top' : 'middle';
 ?>
+									<p><?php echo $count; ?> of <?php echo count(self::$taxes[$taxonomy]['fields']); ?></p>
 									<div class="<?php echo $class; ?>">
 										<div class="field-title">
 											<label>Parent <?php echo $label; ?>:</label>
@@ -2028,6 +1999,7 @@ class BT {
 				$count++;
 				$class = ($count == 1) ? 'top' : 'middle';
 ?>
+									<p><?php echo $count; ?> of <?php echo count(self::$taxes[$taxonomy]['fields']); ?></p>
 									<div class="<?php echo $class; ?>">
 										<div class="field-title">
 											<label>Description:</label>
@@ -2038,11 +2010,15 @@ class BT {
 <?php
 			}
 
+			$total = $count + count(self::$taxes[$taxonomy]['fields']);
+
 			foreach (self::$taxes[$taxonomy]['fields'] as $field => $keys) {
+
+				$count++;
 
 				// set box class
 				switch ($count) {
-					case count(self::$taxes[$taxonomy]['fields']): {
+					case $total: {
 						$class = 'bottom';
 						break;
 					}
@@ -2056,6 +2032,7 @@ class BT {
 				}
 ?>
 								<div class="<?php echo $class; ?>">
+									<p><?php echo $count; ?> of <?php echo $total; ?></p>
 <?php
 				$fval = $field_values[$field];
 
@@ -2063,7 +2040,6 @@ class BT {
 ?>
 								</div>
 <?php
-				$count++;
 			}
 ?>
 							</div>
@@ -2093,7 +2069,7 @@ class BT {
 						update_term_meta(
 							$term_id,
 							$prefix . $key,
-							sanitize_text_field($_POST[$prefix . $key])
+							$_POST[$prefix . $key]
 						);
 					}
 				}		
@@ -2107,7 +2083,7 @@ class BT {
 						update_term_meta(
 							$term_id,
 							$prefix . $tax,
-							sanitize_text_field(implode(',', $term_ids))
+							implode(',', $term_ids)
 						);
 					}
 				}
@@ -2125,29 +2101,15 @@ class BT {
 		unset($columns['slug']);
 		unset($columns['posts']);
 
-		$columns = apply_filters('bt_taxonomy_columns', $columns);
+		$columns = apply_filters(strtolower(__CLASS__) . '_taxonomy_columns', $columns);
 
 		return $columns;
 	}
 
 	public static function taxonomy_custom_column_views($output, $column_key, $term_id) {
-		$output = apply_filters('bt_taxonomy_column', $output, $column_key, $term_id);
+		$output = apply_filters(strtolower(__CLASS__) . '_taxonomy_column', $output, $column_key, $term_id);
 
 		return $output;
-	}
-
-	// get terms of a taxonomy
-
-	public static function get_terms_of_taxonomy($taxonomy) {
-		$terms = [];
-
-		if (isset(self::$taxes[$taxonomy])) {
-			$terms = get_terms($taxonomy, [
-				'hide_empty' => false
-			]);
-		}
-
-		return $terms;
 	}
 
 	// add buttons to custom taxonomy list page
@@ -2263,7 +2225,7 @@ class BT {
 										<input type="hidden" name="tax_input[<?php echo $category; ?>][]" value="0">
 										<ul id="<?php echo $category; ?>checklist" data-wp-lists="list:<?php echo $category; ?>" class="categorychecklist form-no-clear">
 <?php
-					$terms = self::get_terms_of_taxonomy($category);
+					$terms = self::get_terms($category);
 					$term_ids = explode(',', get_user_meta($user->ID, $prefix . $category, true));
 
 					if (count($terms) > 0) {
@@ -2311,7 +2273,13 @@ class BT {
 
 										let r = $('#role').detach();
 										r.css({'width':'99%'});
+<?php
+	if (_BT['st_hide_admin'] == 'yes' && !self::is_dev()) {
+?>
 										r.find('option[value="administrator"]').remove();
+<?php
+	}
+?>
 										$('#meta-role').append(r);
 
 										let e = $('#email').detach();
@@ -2534,7 +2502,7 @@ class BT {
 						update_user_meta(
 							$user_id,
 							$prefix . $tax,
-							sanitize_text_field(implode(',', $term_ids))
+							implode(',', $term_ids)
 						);
 					}
 				}
@@ -2547,13 +2515,13 @@ class BT {
 	public static function manage_users_columns($columns) {
 		unset($columns['posts']);
 
-		$columns = apply_filters('bt_user_columns', $columns);
+		$columns = apply_filters(strtolower(__CLASS__) . '_user_columns', $columns);
 
 		return $columns;
 	}
 
 	public static function manage_users_custom_column($output, $column_key, $user_id) {
-		$output = apply_filters('bt_user_column', $output, $column_key, $user_id);
+		$output = apply_filters(strtolower(__CLASS__) . '_user_column', $output, $column_key, $user_id);
 
 		return $output;
 	}
@@ -2600,45 +2568,110 @@ class BT {
 		return $views;
 	}
 
-	// helper functions
+	//     ▄█    █▄        ▄████████   ▄█           ▄███████▄  
+	//    ███    ███      ███    ███  ███          ███    ███  
+	//    ███    ███      ███    █▀   ███          ███    ███  
+	//   ▄███▄▄▄▄███▄▄   ▄███▄▄▄      ███          ███    ███  
+	//  ▀▀███▀▀▀▀███▀   ▀▀███▀▀▀      ███        ▀█████████▀   
+	//    ███    ███      ███    █▄   ███          ███         
+	//    ███    ███      ███    ███  ███▌    ▄    ███         
+	//    ███    █▀       ██████████  █████▄▄██   ▄████▀
+
+	// get a meta value for a post or term by meta key
 
 	public static function get($id, $field, $is_json = false) {
 		$type = get_post_type($id);
+		$function = 'post';
 
 		if (!$type) {
 			$type = get_term($id)->taxonomy;
-			$data = get_term_meta($id, self::prefix($type) . $field, true);
+			$function = 'term';
 		}
-		else {
-			$data = get_post_meta($id, self::prefix($type) . $field, true);
-		}
+
+		$data = call_user_func_array('get_' . $function . '_meta', [$id, self::prefix($type) . $field, true]);
 
 		return ($is_json) ? json_decode($data, true) : $data;
 	}
 
+	// get all meta data for a post or term
+
+	public static function get_all($id, $is_json = false) {
+		$type = get_post_type($id);
+		$function = 'post';
+
+		if (!$type) {
+			$type = get_term($id)->taxonomy;
+			$function = 'term';
+		}
+
+		$data = call_user_func_array('get_' . $function . '_meta', [$id]);
+
+		return ($is_json) ? json_decode($data, true) : $data;
+	}
+
+	// set a meta value of a field for a post or term
+
 	public static function set($id, $field, $value) {
-		return update_post_meta($id, self::prefix(get_post_type($id)) . $field, $value);
+		$type = get_post_type($id);
+		$function = 'post';
+
+		if (!$type) {
+			$type = get_term($id)->taxonomy;
+			$function = 'term';
+		}
+
+		return call_user_func_array('update_' . $function . '_meta', [$id, self::prefix($type) . $field, $value]);
 	}
 
-	public static function update($id, $field, $key, $value) {
-		$data = json_decode(get_post_meta($id, self::prefix(get_post_type($id)) . $field, true), true);
-		$data[$key] = $value;
+	// if the meta value is JSON this will set a
+	// value of a key in that array, overwriting an
+	// existing value or creating the key and assigning
+	// the value if it doesn't exist
 
-		return update_post_meta($id, self::prefix(get_post_type($id)) . $field, json_encode($data));
+	public static function update($id, $field, $key, $value = false) {
+		$type = get_post_type($id);
+		$function = 'post';
+
+		if (!$type) {
+			$type = get_term($id)->taxonomy;
+			$function = 'term';
+		}
+
+		$data = json_decode(call_user_func_array('get_' . $function . '_meta', [$id, self::prefix($type) . $field, true]), true);
+
+		if ($value) {
+			$data[$key] = $value;
+		}
+		else {
+			unset($data[$key]);
+		}
+
+		return call_user_func_array('update_' . $function . '_meta', [$id, self::prefix($type) . $field, json_encode($data)]);
 	}
+
+	// if the meta value is JSON, this will delete
+	// a key/value pair in that array using an overloaded
+	// version of the 'update' function above
 
 	public static function delete($id, $field, $key) {
-		$data = json_decode(get_post_meta($id, self::prefix(get_post_type($id)) . $field, true), true);
-		unset($data[$key]);
-
-		return update_post_meta($id, self::prefix(get_post_type($id)) . $field, json_encode($data));
+		return self::update($id, $field, $key, false);
 	}
+
+	// returns an array of all meta fields for a post or term
 
 	public static function fields($type) {
 		$fields = [];
+		$data_type = null;
 
-		if (count(self::$posts[$type]) > 0) {
-			foreach (self::$posts[$type] as $field => $keys) {
+		if (isset(self::$posts[$type])) {
+			$data_type = self::$posts[$type];
+		}
+		else if (isset(self::$taxes[$type])) {
+			$data_type = self::$taxes[$type];
+		}
+
+		if (count($data_type) > 0) {
+			foreach ($data_type as $field => $keys) {
 				$fields[] = $field;
 			}
 		}
@@ -2646,9 +2679,20 @@ class BT {
 		return $fields;
 	}
 
+	// returns an array of all keys for a meta field for a post/term
+
 	public static function keys($type, $field) {
-		return self::$posts[$type][$field];
+		if (isset(self::$posts[$type])) {
+			return self::$posts[$type][$field];
+		}
+		else if (isset(self::$taxes[$type])) {
+			return self::$taxes[$type][$field];
+		}
+
+		return false;
 	}
+
+	// creates a post object of the requested type
 
 	public static function make($type, $title, $author_id = null) {
 		return wp_insert_post([
@@ -2660,6 +2704,20 @@ class BT {
 			'post_type' => $type,
 			'post_category' => array(0)
 		]);
+	}
+
+	// returns all terms of a taxonomy
+
+	public static function get_terms($taxonomy) {
+		$terms = [];
+
+		if (isset(self::$taxes[$taxonomy])) {
+			$terms = get_terms($taxonomy, [
+				'hide_empty' => false
+			]);
+		}
+
+		return $terms;
 	}
 
 
@@ -2675,9 +2733,15 @@ class BT {
 	public static function ajax() {
 		$hash = $_POST['hash'] ?? null;
 		$check = hash('sha1', 'e' . wp_get_current_user()->ID);
+		$nonce = $_POST['nonce'] ?? null;
+
+		if (!$nonce || !wp_verify_nonce($nonce, _PLUGIN)) {
+			wp_send_json_error('security error (nonce failed)');
+			die;
+		}
 
 		if (!$hash || $hash !== $check) {
-			wp_send_json_error('security error');
+			wp_send_json_error('security error (hash failed)');
 			die;
 		}
 
@@ -2731,7 +2795,7 @@ class BT {
 
 						if (count($row) > 0) {
 							foreach ($row as $field => $value) {
-								update_post_meta($id, BT::prefix($type) . $field, $value);
+								update_post_meta($id, self::prefix($type) . $field, $value);
 							}
 						}
 
@@ -2759,7 +2823,7 @@ class BT {
 
 						if (count($row) > 0) {
 							foreach ($row as $field => $value) {
-								update_term_meta($id, BT::prefix($type) . $field, $value);
+								update_term_meta($id, self::prefix($type) . $field, $value);
 							}
 						}
 
@@ -2781,6 +2845,91 @@ class BT {
 		}
 
 		die;
+	}
+
+	public static function importer($type, $p_or_t) {
+?>
+		<style>
+			.progress {
+				display: none;
+				position: relative;
+				top: -4px;
+				margin-left: 6px;
+				border-radius: 3px;
+				padding-top: 4px;
+				border: 1px solid var(--primary-brand-colour);
+				width: 120px;
+				height: 24px;
+				text-align: center;
+			}
+		</style>
+		<script>
+			function bt_csv(content) {
+				const rows = content.split('\n');
+				const headers = rows[0].split(',');
+
+				const data = rows.slice(1).map(row => {
+					const values = row.split(',');
+
+					return headers.reduce((obj, header, index) => {
+						obj[header.trim()] = values[index]?.trim();
+						return obj;
+					}, {});
+				});
+
+				return data;
+			}
+			function bt_ajax(data, i = 0) {
+				const t = data.length - 1;
+				if (i == t) {
+					jQuery('.progress').text('Done').fadeOut(200);
+					window.location.reload(true);
+					return;
+				}
+
+				let v = Math.trunc((i / t) * 100);
+				jQuery('.progress').css('display', 'inline-block').text(v + '% (' + i + ' of ' + t + ')');
+
+				jQuery.ajax({
+					url: ajaxurl,
+					type: 'POST',
+					data: {
+						action: 'bt_ajax',
+						hash: _bt.hash,
+						nonce: _bt.nonce,
+						payload: {
+							port: '<?php echo $p_or_t; ?>',
+							type: '<?php echo $type; ?>',
+							cmd: 'import',
+							data: data[i]
+						}
+					},
+					success: function(response) {
+						bt_ajax(data, i + 1);
+					},
+					error: function(xhr, status, error) {
+						alert('There was an error processing the import: ' + error);
+					}
+				});
+			}
+			function bt_read(file) {
+				if (file) {
+					const reader = new FileReader();
+					reader.onload = function(e) {
+						const content = e.target.result;
+						const rows = bt_csv(content);
+						var p = 0, c = rows.length - 1, r = false;
+
+						jQuery('#p-csv-f').val('');
+
+						bt_ajax(rows, 0);
+					};
+
+					reader.readAsText(file);
+				}
+			}
+		</script>
+<?php
 	}
 
 

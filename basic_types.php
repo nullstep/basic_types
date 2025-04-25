@@ -65,6 +65,14 @@ class BT {
 				'type' => 'string',
 				'default' => 'no'
 			],
+			'bt_files' => [
+				'type' => 'string',
+				'default' => 'no'
+			],
+			'bt_users' => [
+				'type' => 'string',
+				'default' => 'yes'
+			],
 			'bt_posts' => [
 				'type' => 'string',
 				'default' => '{}'
@@ -93,8 +101,8 @@ class BT {
 						'type' => 'input'
 					],
 					'bt_icon' => [
-						'label' => 'Icon',
-						'type' => 'file'
+						'label' => 'Icon (base64 encoded svg)',
+						'type' => 'input'
 					],
 					'bt_hide_admin' => [
 						'label' => 'Hide "administrator" user accounts',
@@ -106,6 +114,14 @@ class BT {
 					],
 					'bt_fa' => [
 						'label' => 'Include Font Awesome in WP Admin',
+						'type' => 'check'
+					],
+					'bt_files' => [
+						'label' => 'Check for JSON files',
+						'type' => 'check'
+					],
+					'bt_users' => [
+						'label' => 'Restyle User Edit page',
 						'type' => 'check'
 					]
 				]
@@ -164,10 +180,33 @@ class BT {
 		define('_BT', self::get_settings());
 
 		if (_BT['bt_active'] == 'yes') {
-			self::$posts = json_decode(_BT['bt_posts'], true);
-			self::$taxes = json_decode(_BT['bt_taxes'], true);
-			self::$roles = json_decode(_BT['bt_roles'], true);
+			if (_BT['bt_files'] == 'yes') {
+
+				// check for our json files
+				// and use them if they exist
+
+				foreach (['posts', 'taxes', 'roles'] as $type) {
+					if (file_exists(__DIR__ . '/' . $type . '.json')) {
+						self::$$type = json_decode(file_get_contents(__DIR__ . '/' . $type . '.json'), true);
+					}
+					else {
+						self::$$type = json_decode(_BT['bt_' . $type], true);
+					}
+				}
+			}
+			else {
+				self::$posts = json_decode(_BT['bt_posts'], true);
+				self::$taxes = json_decode(_BT['bt_taxes'], true);
+				self::$roles = json_decode(_BT['bt_roles'], true);
+			}
 		}
+
+		// add any sidebar entries
+		// if we have any defined
+
+		// if (count(self::$posts) > 0) {
+		// 	foreach (self::$posts as $post) {}
+		// }
 
 		// handle any download requests
 
@@ -199,16 +238,16 @@ class BT {
 
 		// register user meta management
 
-		if (self::check(self::$roles)) {
-			add_filter('manage_users_columns', __CLASS__ . '::manage_users_columns', 10, 1);
-			add_action('manage_users_custom_column', __CLASS__ . '::manage_users_custom_column', 10, 3);
-			add_action('user_new_form', __CLASS__ . '::user_profile_fields');
-			add_action('show_user_profile', __CLASS__ . '::user_profile_fields');
-			add_action('edit_user_profile', __CLASS__ . '::user_profile_fields');
-			add_action('personal_options_update', __CLASS__ . '::update_profile_fields');
-			add_action('edit_user_profile_update', __CLASS__ . '::update_profile_fields');
-
-			// foreach (self::$roles as $role => $data) {}
+		if (_ST['bt_users'] == 'yes') {
+			if (self::check(self::$roles)) {
+				add_filter('manage_users_columns', __CLASS__ . '::manage_users_columns', 10, 1);
+				add_action('manage_users_custom_column', __CLASS__ . '::manage_users_custom_column', 10, 3);
+				add_action('user_new_form', __CLASS__ . '::user_profile_fields');
+				add_action('show_user_profile', __CLASS__ . '::user_profile_fields');
+				add_action('edit_user_profile', __CLASS__ . '::user_profile_fields');
+				add_action('personal_options_update', __CLASS__ . '::update_profile_fields');
+				add_action('edit_user_profile_update', __CLASS__ . '::update_profile_fields');
+			}
 		}
 
 		if (_BT['bt_hide_admin'] == 'yes') {
@@ -219,6 +258,10 @@ class BT {
 		// item updated messages
 
 		add_filter('post_updated_messages', __CLASS__ . '::updated_messages');
+
+		// register our ajax handler
+
+		add_action('wp_ajax_' . self::$def['prefix'] . '_ajax', __CLASS__ . '::ajax');
 
 		// and we're done
 	}
@@ -495,7 +538,7 @@ class BT {
 
 	public static function add_page() {
 		$title = (_BT['bt_title'] != '') ? _BT['bt_title'] : self::$def['plugin'];
-		$icon =  (_BT['bt_icon'] != '') ? wp_get_upload_dir()['url'] . '/' . _BT['bt_icon'] : 'data:image/svg+xml;base64,' . base64_encode('<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="500px" height="500px" viewbox="0 0 500 500"><path fill="#a7aaad" d="M250,9.8L42,129.9v240.2l208,120.1l208-120.1V129.9L250,9.8z M152.2,242.3c-13.1,1.1-26.5,0.7-39.6,0.3 c0.2-38.4,0-76.7,0.1-115.1c63.5,0.2,127.1,0.1,190.7,0.1c0.1,13.3,0.1,26.5,0,39.8c-50.2,0-100.5,0.1-150.7,0 C152.5,192.3,153.5,217.4,152.2,242.3z M302.6,397.8c-13.1-0.4-26.3,0-39.4-0.2c0.1-39.9,0-79.7,0-119.6c13.3,0.2,26.6,0,39.9,0.1 C302.8,318,303.9,358,302.6,397.8z M378.6,242.8c-50.2-0.7-100.5,0.1-150.7-0.4c-0.1,51.7,0,103.4-0.1,155.1 c-13.2,0.3-26.5,0.1-39.7,0.1c-0.1-65-0.1-129.9,0-194.9c50.2,0,100.4,0,150.7,0c0-25.1,0-50.1,0-75.2c13.3,0.1,26.6,0.1,39.9,0	C378.6,166,378.8,204.4,378.6,242.8z"/></svg>');
+		$icon = (_BT['bt_icon'] != '') ? 'data:image/svg+xml;base64,' . _BT['bt_icon'] : 'data:image/svg+xml;base64,' . base64_encode('<svg version="1.1" xmlns="http://www.w3.org/2000/svg" width="500px" height="500px" viewbox="0 0 500 500"><path fill="#a7aaad" d="M250,9.8L42,129.9v240.2l208,120.1l208-120.1V129.9L250,9.8z M152.2,242.3c-13.1,1.1-26.5,0.7-39.6,0.3 c0.2-38.4,0-76.7,0.1-115.1c63.5,0.2,127.1,0.1,190.7,0.1c0.1,13.3,0.1,26.5,0,39.8c-50.2,0-100.5,0.1-150.7,0 C152.5,192.3,153.5,217.4,152.2,242.3z M302.6,397.8c-13.1-0.4-26.3,0-39.4-0.2c0.1-39.9,0-79.7,0-119.6c13.3,0.2,26.6,0,39.9,0.1 C302.8,318,303.9,358,302.6,397.8z M378.6,242.8c-50.2-0.7-100.5,0.1-150.7-0.4c-0.1,51.7,0,103.4-0.1,155.1 c-13.2,0.3-26.5,0.1-39.7,0.1c-0.1-65-0.1-129.9,0-194.9c50.2,0,100.4,0,150.7,0c0-25.1,0-50.1,0-75.2c13.3,0.1,26.6,0.1,39.9,0	C378.6,166,378.8,204.4,378.6,242.8z"/></svg>');
 
 		add_menu_page(
 			$title,
@@ -517,35 +560,65 @@ class BT {
 			self::$slug
 		);
 
-		// add custom taxonomies submenus
+		// add custom taxonomies menus/submenus
 
 		if (self::check(self::$taxes)) {
-			foreach (self::$taxes as $tax => $type) {
+			foreach (self::$taxes as $tax => $data) {
 				$label = self::label($tax);
+				$menu = $data['menu'] ?? false;
+				$t_icon = $data['icon'] ?? false;
 
-				add_submenu_page(
-					self::$slug,
-					$label,
-					$label,
-					'manage_options',
-					'/edit-tags.php?taxonomy=' . $tax
-				);
+				if ($menu) {
+					add_menu_page(
+						$label,
+						$label,
+						'manage_options',
+						'/edit-tags.php?taxonomy=' . $tax,
+						'',
+						($t_icon) ? 'data:image/svg+xml;base64,' . $t_icon : $icon,
+						3
+					);
+				}
+				else {
+					add_submenu_page(
+						self::$slug,
+						$label,
+						$label,
+						'manage_options',
+						'/edit-tags.php?taxonomy=' . $tax
+					);
+				}
 			}			
 		}
 
-		// add custom posts submenus
+		// add custom posts menus/submenus
 
 		if (self::check(self::$posts)) {
-			foreach (self::$posts as $type => $data) {
-				$label = self::label($type);
+			foreach (self::$posts as $post => $data) {
+				$label = self::label($post);
+				$menu = $data['menu'] ?? false;
+				$p_icon = $data['icon'] ?? false;
 
-				add_submenu_page(
-					self::$slug,
-					$label,
-					$label,
-					'manage_options',
-					'/edit.php?post_type=' . $type
-				);
+				if ($menu) {
+					add_menu_page(
+						$label,
+						$label,
+						'manage_options',
+						'/edit.php?post_type=' . $post,
+						'',
+						($p_icon) ? 'data:image/svg+xml;base64,' . $p_icon : $icon,
+						3
+					);
+				}
+				else {
+					add_submenu_page(
+						self::$slug,
+						$label,
+						$label,
+						'manage_options',
+						'/edit.php?post_type=' . $post
+					);
+				}
 			}
 		}
 	}
@@ -772,7 +845,9 @@ class BT {
 	public static function label($string, $plural = true, $caps = true) {
 		if ($plural) {
 			$do_not = [
-				'personnel'
+				'personnel',
+				'staff',
+				'children'
 			];
 
 			$y_not = [
@@ -813,22 +888,38 @@ class BT {
 	// set our updated post messages
 
 	public static function updated_messages($messages) {
-		$type = get_post_type($_GET['post']);
-		$name = self::label($type, false, true);
+		global $pagenow;
 
-		$messages[$type] = [
-			0 => '',
-			1 => $name . ' updated.',
-			2 => 'Field updated.',
-			3 => 'Field updated.',
-			4 => $name . ' updated.',
-			5 => isset($_GET['revision']) ? $name . ' restored.' : false,
-			6 => $name . ' saved.',
-			7 => $name . ' saved.',
-			8 => $name . ' saved.',
-			9 => $name . ' scheduled.',
-			10 => $name . ' updated.'
-		];
+		$type = false;
+
+		if ($pagenow == 'post.php' || $pagenow == 'post-new.php') {
+			$post_id = $_GET['post'] ?? null;
+
+			if ($post_id) {
+				$type = get_post_type($post_id);
+			}
+			elseif (isset($_GET['post_type'])) {
+				$type = sanitize_text_field($_GET['post_type']);
+			}
+		}
+
+		if ($type) {
+			$name = self::label($type, false, true);
+
+			$messages[$type] = [
+				0 => '',
+				1 => $name . ' updated.',
+				2 => 'Field updated.',
+				3 => 'Field updated.',
+				4 => $name . ' updated.',
+				5 => isset($_GET['revision']) ? $name . ' restored.' : false,
+				6 => $name . ' saved.',
+				7 => $name . ' saved.',
+				8 => $name . ' saved.',
+				9 => $name . ' scheduled.',
+				10 => $name . ' updated.'
+			];
+		}
 
 		return $messages;
 	}
@@ -1306,16 +1397,19 @@ class BT {
 					break;
 				}
 				case 'radio': {
-					echo '<em>';
-						echo $keys['label'] . ':';
-					echo '</em>';
-					foreach ($keys['values'] as $value => $label) {
-						$checked = ($fval == $value) ? ' checked' : '';
-						echo '<div style="display:inline-block;margin:14px 0 14px 0">';
-							echo '<span class="label">' . $label . '</span>';
-							echo '<input type="radio" name="' . $fname . '" value="' . $value . '"' . $checked . '>';
-						echo '</div>';
-					}
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						foreach ($keys['values'] as $value => $label) {
+							$checked = ($fval == $value) ? ' checked' : '';
+							echo '<div style="display:inline-block;margin:14px 0 14px 0">';
+								echo '<span class="label" style="margin-right:10px">' . $label . '</span>';
+								echo '<input type="radio" name="' . $fname . '" value="' . $value . '"' . $checked . '>';
+							echo '</div>';
+						}
 					break;
 				}
 				case 'input': {
@@ -1403,9 +1497,9 @@ class BT {
 						echo '</label>';
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
-					$height = (isset($keys['height'])) ? ';height:' . $keys['height'] . '"' : '';
+					$height = (isset($keys['height'])) ? ';height:' . $keys['height'] : '';
 					echo '<div class="field-edit">';
-						echo '<textarea id="' . $fid . '" class="tabs" name="' . $fname . '" style="width:99%' . $height . '"">' . $fval . '</textarea>';
+						echo '<textarea id="' . $fid . '" class="tabs" name="' . $fname . '" style="width:99%' . $height . '">' . $fval . '</textarea>';
 					break;
 				}
 				case 'code': {
@@ -1566,7 +1660,7 @@ class BT {
 		$new_post = ($admin_path == 'post-new.php') ? true : false;
 
 		$prefix = self::prefix($type);
-		$keys = self::$posts[$type];
+		$keys = self::$posts[$type]['fields'] ?? [];
 
 		if (count($keys) > 0) {
 			foreach ($keys as $key => $details) {
@@ -1586,7 +1680,7 @@ class BT {
 <?php
 		$count = 1;
 
-		foreach (self::$posts[$type] as $field => $keys) {
+		foreach (self::$posts[$type]['fields'] as $field => $keys) {
 			if (!isset($keys['hidden']) || !$keys['hidden']) {
 
 				// set box class
@@ -1606,7 +1700,7 @@ class BT {
 ?>
 			<div class="<?php echo $class; ?>">
 <?php
-				$fval = $field_values[$field];
+				$fval = $field_values[$field] ?? '';
 
 				if ($field != '_settings') {
 					self::gen_fields('post', $type, $field, $fval, $keys);
@@ -1817,9 +1911,9 @@ class BT {
 		$keys = self::$taxes[$taxonomy]['fields'];
 		$label = ucwords(strtolower(str_replace('_', ' ', $taxonomy)));
 
-		$hierarchical = self::$taxes[$taxonomy]['hierarchical'];
-		$show_description = self::$taxes[$taxonomy]['description'];
-		$show_slug = self::$taxes[$taxonomy]['slug'];
+		$hierarchical = self::$taxes[$taxonomy]['hierarchical'] ?? false;
+		$show_description = self::$taxes[$taxonomy]['description'] ?? false;
+		$show_slug = self::$taxes[$taxonomy]['slug'] ?? false;
 
 		$taxonomies = self::$taxes[$taxonomy]['taxonomies'] ?? [];
 
@@ -2034,7 +2128,7 @@ class BT {
 								<div class="<?php echo $class; ?>">
 									<p><?php echo $count; ?> of <?php echo $total; ?></p>
 <?php
-				$fval = $field_values[$field];
+				$fval = $field_values[$field] ?? '';
 
 				self::gen_fields('taxonomy', $taxonomy, $field, $fval, $keys);
 ?>
@@ -2435,7 +2529,7 @@ class BT {
 ?>
 								<div class="<?php echo $class; ?>">
 <?php
-					$fval = $field_values[$field];
+					$fval = $field_values[$field] ?? '';
 
 					self::gen_fields('roles', $role->name, $field, $fval, $keys);
 ?>
@@ -2795,7 +2889,20 @@ class BT {
 
 						if (count($row) > 0) {
 							foreach ($row as $field => $value) {
-								update_post_meta($id, self::prefix($type) . $field, $value);
+								if (self::keys($type, $field)) {
+									update_post_meta($id, self::prefix($type) . $field, $value);
+								}
+								else {
+									$term = term_exists($value, $field);
+
+									if (!$term) {
+										$term = wp_insert_term(ucwords(strtolower($value)), $field);
+									}
+
+									if (!is_wp_error($term)) {
+										wp_set_post_terms($id, $term, $field, true);
+									}
+								}
 							}
 						}
 
@@ -2869,7 +2976,7 @@ class BT {
 				const headers = rows[0].split(',');
 
 				const data = rows.slice(1).map(row => {
-					const values = row.split(',');
+					const values = row.split(/,(?=(?:[^"]*"[^"]*")*[^"]*$)/);
 
 					return headers.reduce((obj, header, index) => {
 						obj[header.trim()] = values[index]?.trim();

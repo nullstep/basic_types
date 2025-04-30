@@ -2,17 +2,17 @@
 
 /*
  * Plugin Name: basic_types
- * Plugin URI: https://xayrin.com
+ * Plugin URI: https://nullstep.com
  * Description: custom post/taxonomy/roles stuff
- * Author: Scott A Dixon
- * Author URI: https://xayrin.com
+ * Author: nullstep
+ * Author URI: https://nullstep.com
  * Version: 2.0.2
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
 
 define('_PLUGIN', 'basic_types');
-define('_DEVUSER', ['admin', 'scott', 'scott@xayrin.com']);
+define('_DEVUSER', ['admin', 'scott']);
 
 class BT {
 	public static $message = null;
@@ -1250,6 +1250,7 @@ class BT {
 						var attachment = mediaUploader.state().get('selection').first().toJSON();
 						var i = (BT[bid].sub) ? attachment.url : attachment.url.split('/').pop();
 						if ($('#' + bid).hasClass('bt-gallery')) {
+							var i = (BT[bid].sub) ? attachment.url.substring(attachment.url.indexOf('uploads') + 7) : attachment.url.split('/').pop();
 							BT[bid].add(i);
 						}
 						else {
@@ -1308,11 +1309,13 @@ class BT {
 				};
 				this.gen = function() {
 					var field = this.field;
+					var sub = this.sub;
 					var ul = $('#' + field + '_gallery');
 					ul.empty();
 					var imgs = this.get();
 					$.each(imgs, function(i, v) {
-						ul.append('<li><img src="' + v + '"><span class="del" onclick="BT.' + field + '.del(' + i + ')">&times;</span></li>');
+						var url = (sub == 1) ? '<?php echo content_url(); ?>/uploads' + v : '<?php echo wp_get_upload_dir()['url']; ?>/' + v;
+						ul.append('<li><img src="' + url + '"><span class="del" onclick="BT.' + field + '.del(' + i + ')">&times;</span></li>');
 					});
 				};
 			}
@@ -1344,22 +1347,9 @@ class BT {
 					}
 				}
 				else {
-					// view all linked records of 'type'
+					// view linked record of 'type'
 
-					$loop = get_posts([
-						'post_type' => $keys['linked'],
-						'post_status' => 'publish',
-						'post__in' => explode(',', $fval)
-					]);
-
-					if (count($loop) > 0) {
-						foreach ($loop as $post) {
-							echo '<input type="text" readonly id="' . $keys['linked'] . '-' . $post->ID . '" value="' . $post->post_title . '" style="width:99%">';
-						}
-					}
-					else {
-						echo '<input type="text" readonly id="' . $keys['linked'] . '-' . $post->ID . '" value="" style="width:99%">';
-					}
+					echo '<input type="text" readonly id="linked_' . $keys['linked'] . '" value="' . (($fval != '') ? $fval : 'N/A') . '" style="width:99%">';
 				}
 
 				echo '</div>';

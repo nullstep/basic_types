@@ -2,17 +2,17 @@
 
 /*
  * Plugin Name: basic_types
- * Plugin URI: https://nullstep.com/wp-plugins
+ * Plugin URI: https://xayrin.com
  * Description: custom post/taxonomy/roles stuff
- * Author: nullstep
- * Author URI: https://nullstep.com
- * Version: 1.4.1
+ * Author: Scott A Dixon
+ * Author URI: https://xayrin.com
+ * Version: 2.0.2
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
 
 define('_PLUGIN', 'basic_types');
-define('_DEVUSER', ['admin', 'scott']);
+define('_DEVUSER', ['admin', 'scott', 'scott@xayrin.com']);
 
 class BT {
 	public static $message = null;
@@ -22,7 +22,7 @@ class BT {
 	public static $taxes;
 	public static $roles;
 	
-	protected static $slug; 
+	protected static $slug;
 
 	//   ▄█   ███▄▄▄▄▄     ▄█       ███      
 	//  ███   ███▀▀▀▀██▄  ███   ▀█████████▄  
@@ -238,7 +238,7 @@ class BT {
 
 		// register user meta management
 
-		if (_ST['bt_users'] == 'yes') {
+		if (_BT['bt_users'] == 'yes') {
 			if (self::check(self::$roles)) {
 				add_filter('manage_users_columns', __CLASS__ . '::manage_users_columns', 10, 1);
 				add_action('manage_users_custom_column', __CLASS__ . '::manage_users_custom_column', 10, 3);
@@ -1122,6 +1122,10 @@ class BT {
 					margin-right: 1px;
 					height: 36px;
 				}
+				& .plus-button {
+					font-size: 2rem;
+					line-height: 25px;
+				}
 				& .view-file-button {
 					position: relative;
 					top: 6px;
@@ -1130,6 +1134,42 @@ class BT {
 				}
 				& .button-primary:hover {
 					box-shadow: 0 0 100px 100px rgba(255,255,255,.3) inset;
+				}
+				& .bt-gallery-images li {
+					position: relative;
+					display: inline-block;
+					vertical-align: top;
+					width: 150px;
+					margin: 0 10px 10px 0;
+					padding: 5px;
+					border: 1px solid #8c8f94;
+					border-radius: 4px;
+
+					& img {
+						display: block;
+						width: 100%;
+						height: auto;
+						margin: 0;
+						padding: 0;
+					}
+
+					& .del {
+						position: absolute;
+						top: 10px;
+						right: 10px;
+						width: 20px;
+						height: 20px;
+						text-align: center;
+						font-size: 24px;
+						line-height: 14px;
+						cursor: pointer;
+						user-select: none;
+						z-index: 999;
+						background: #fff;
+						border: 2px solid #000;
+						border-radius: 99px;
+
+					}
 				}
 			}
 			p.search-box,
@@ -1188,7 +1228,7 @@ class BT {
 			$(function(){
 				var mediaUploader, bid;
 				$('.choose-file-button').on('click', function(e) {
-					bid = '#' + $(this).data('id');
+					bid = $(this).data('id');
 					e.preventDefault();
 					if (mediaUploader) {
 						mediaUploader.open();
@@ -1208,7 +1248,13 @@ class BT {
 					}, this);
 					mediaUploader.on('select', function() {
 						var attachment = mediaUploader.state().get('selection').first().toJSON();
-						$(bid).val(attachment.url.split('/').pop());
+						var i = (BT[bid].sub) ? attachment.url : attachment.url.split('/').pop();
+						if ($('#' + bid).hasClass('bt-gallery')) {
+							BT[bid].add(i);
+						}
+						else {
+							$('#' + bid).val(i);
+						}
 					});
 					mediaUploader.open();
 				});
@@ -1221,6 +1267,57 @@ class BT {
 		$fid = self::$def['prefix'] . '_' . $type . '_' . $field;
 		$fname = self::prefix($type) . $field;
 
+		$override = apply_filters(self::$def['prefix'] . '_add_post_fields', false, $what, $type, $field, $fval, $keys);
+
+		if ($override) {
+			echo '<div class="field-title">';
+				echo '<label>' . $override['label'] . ':</label>';
+				echo '<span class="desc">' . $override['description'] . '</span>';
+			echo '</div>';
+
+			echo '<div class="field-edit">';
+				echo $override['value'];
+			echo '</div>';
+
+			return;
+		}
+?>
+		<script>
+			var BT = {};
+			function gallery(e) {
+				this.sub = <?php echo (get_option('uploads_use_yearmonth_folders')) ? 1 : 0; ?>;
+				this.field = e;
+				this.get = function() {
+					var a = $('#' + this.field).val().split(',');
+					return a.filter((val) => val !== '');
+				};
+				this.set = function(imgs) {
+					$('#' + this.field).val(imgs.join());
+				};
+				this.del = function(index) {
+					var imgs = this.get();
+					imgs.splice(index, 1);
+					this.set(imgs);
+					this.gen();
+				};
+				this.add = function(img) {
+					var imgs = this.get();
+					imgs.push(img);
+					this.set(imgs);
+					this.gen();
+				};
+				this.gen = function() {
+					var field = this.field;
+					var ul = $('#' + field + '_gallery');
+					ul.empty();
+					var imgs = this.get();
+					$.each(imgs, function(i, v) {
+						ul.append('<li><img src="' + v + '"><span class="del" onclick="BT.' + field + '.del(' + i + ')">&times;</span></li>');
+					});
+				};
+			}
+		</script>
+<?php
 		if (!empty($keys['linked'])) {
 			// this is a linked id field
 
@@ -1547,14 +1644,15 @@ class BT {
 					break;
 				}
 				case 'colour': {
+					$colour = ($fval == '') ? '#000000' : $fval;
 						echo '<label for="' . $fid . '">';
 							echo $keys['label'] . ':';
 						echo '</label>';
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<input id="colour-' . $fid . '" data-id="' . $fid . '" type="color" class="choose-colour-button" value="' . $fval . '">';
-						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:93%">';
+						echo '<input id="colour-' . $fid . '" data-id="' . $fid . '" type="color" class="choose-colour-button" value="' . $colour . '">';
+						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $colour . '" style="width:93%">';
 						echo '<script>';
 							echo '$("#' . $fid . '").on("change", function() {';
 								echo '$("#colour-' . $fid . '").val($("#' . $fid . '").val());';
@@ -1623,7 +1721,21 @@ class BT {
 						echo '</a>';
 					break;
 				}
-
+				case 'gallery': {
+							echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input class="bt-gallery" type="hidden" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
+						echo '<div class="button button-primary choose-file-button plus-button" data-id="' . $fid . '">+</div>';
+						echo '<ul class="bt-gallery-images" id="' . $fid . '_gallery"></ul>';
+						echo '<script>';
+							echo 'var g = new gallery("' . $fid . '"); g.gen(); BT.' . $fid . ' = g;';
+						echo '</script>';
+					break;
+				}
 			}
 
 			echo '</div>';
@@ -1726,10 +1838,11 @@ class BT {
 
 		if (array_key_exists($type, self::$posts)) {
 			$prefix = self::prefix($type);
-			$keys = self::$posts[$type];
+			$keys = self::$posts[$type]['fields'];
 
 			if ($keys) {
 				foreach ($keys as $key => $details) {
+
 					if (array_key_exists($prefix . $key, $_POST)) {
 						update_post_meta(
 							$post_id,

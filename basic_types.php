@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.0.3
+ * Version: 2.0.4
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -590,7 +590,7 @@ class BT {
 						$label,
 						$label,
 						'manage_options',
-						'/edit.php?post_type=' . $post,
+						'edit.php?post_type=' . $post,
 						'',
 						($p_icon) ? 'data:image/svg+xml;base64,' . $p_icon : $icon,
 						$mp
@@ -602,7 +602,7 @@ class BT {
 						$label,
 						$label,
 						'manage_options',
-						'/edit.php?post_type=' . $post
+						'edit.php?post_type=' . $post
 					);
 				}
 			}
@@ -622,7 +622,7 @@ class BT {
 						$label,
 						$label,
 						'manage_options',
-						'/edit-tags.php?taxonomy=' . $tax,
+						'edit-tags.php?taxonomy=' . $tax,
 						'',
 						($t_icon) ? 'data:image/svg+xml;base64,' . $t_icon : $icon,
 						$mp
@@ -634,7 +634,7 @@ class BT {
 						$label,
 						$label,
 						'manage_options',
-						'/edit-tags.php?taxonomy=' . $tax
+						'edit-tags.php?taxonomy=' . $tax
 					);
 				}
 			}			
@@ -802,25 +802,47 @@ class BT {
 	public static function set_current_menu($parent_file) {
 		global $submenu_file, $current_screen, $pagenow;
 
-		if (self::check(self::$taxes)) {
-			foreach (self::$taxes as $tax => $data) {
+		$base = $current_screen->base;
 
-				if ($current_screen->id == 'edit-' . $tax) {
-					if ($pagenow == 'post.php') {
-						$submenu_file = 'edit.php?post_type=' . $current_screen->post_type;
+		switch ($pagenow) {
+			case 'edit-tags.php':
+			case 'term.php': {
+				$type = $current_screen->taxonomy;
+
+				if (isset(self::$taxes[$type])) {
+					$tax = self::$taxes[$type];
+					if (isset($tax['menu']) && $tax['menu'] === true) {
+						$parent_file = 'edit-tags.php?taxonomy=' . $type;
 					}
-					if ($pagenow == 'edit-tags.php') {
-						$submenu_file = 'edit-tags.php?taxonomy=' . $tax . '&post_type=' . $current_screen->post_type;
+					else {
+						$parent_file = self::$def['plugin'] . '-menu';
 					}
-					$parent_file = self::$def['plugin'] . '-menu';
 				}
+
+				break;
+			}
+			case 'post-new.php':
+			case 'post.php': {
+				$type = $current_screen->post_type;
+
+				if (isset(self::$posts[$type])) {
+					$post = self::$posts[$type];
+					if (isset($post['menu']) && $post['menu'] === true) {
+						$parent_file = 'edit.php?post_type=' . $type;						
+					}
+					else {
+						$parent_file = self::$def['plugin'] . '-menu';
+					}
+				}
+
+				break;
 			}
 		}
 
 		return $parent_file;
 	}
 
-		public static function set_vars() {
+	public static function set_vars() {
 		$user = wp_get_current_user();
 ?>
 		<script>const _bt = { hash: '<?php echo hash('sha1', 'e' . $user->ID); ?>', nonce: '<?php echo self::$def['nonce']; ?>' };</script>
@@ -1819,6 +1841,7 @@ class BT {
 		<script>
 			var $ = jQuery;
 		</script>
+
 		<div class="inside">
 <?php
 		$count = 1;

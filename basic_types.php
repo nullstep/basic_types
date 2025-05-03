@@ -2255,13 +2255,15 @@ class BT {
 				$count++;
 			}
 
+			$total = $count + count(self::$taxes[$taxonomy]['fields']);
+
 			foreach (self::$taxes[$taxonomy]['fields'] as $field => $keys) {
 
 				$count++;
 
 				// set box class
 				switch ($count) {
-					case count(self::$taxes[$taxonomy]['fields']): {
+					case $total: {
 						$class = 'bottom';
 						break;
 					}

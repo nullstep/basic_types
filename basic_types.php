@@ -6,13 +6,13 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.0.2
+ * Version: 2.0.3
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
 
 define('_PLUGIN', 'basic_types');
-define('_DEVUSER', ['admin', 'scott']);
+define('_DEVUSER', ['admin', 'nullstep']);
 
 class BT {
 	public static $message = null;
@@ -73,6 +73,10 @@ class BT {
 				'type' => 'string',
 				'default' => 'yes'
 			],
+			'bt_order' => [
+				'type' => 'string',
+				'default' => 'pt'
+			],
 			'bt_posts' => [
 				'type' => 'string',
 				'default' => '{}'
@@ -123,6 +127,14 @@ class BT {
 					'bt_users' => [
 						'label' => 'Restyle User Edit page',
 						'type' => 'check'
+					],
+					'bt_order' => [
+						'label' => 'Set Menu Order',
+						'type' => 'select',
+						'values' => [
+							'pt' => 'Posts > Taxonomies',
+							'tp' => 'Taxonomies > Posts'
+						]
 					]
 				]
 			],
@@ -201,13 +213,6 @@ class BT {
 			}
 		}
 
-		// add any sidebar entries
-		// if we have any defined
-
-		// if (count(self::$posts) > 0) {
-		// 	foreach (self::$posts as $post) {}
-		// }
-
 		// handle any download requests
 
 		self::handle_download();
@@ -250,7 +255,7 @@ class BT {
 			}
 		}
 
-		if (_BT['bt_hide_admin'] == 'yes') {
+		if (_BT['bt_hide_admin'] == 'yes' && !self::is_dev()) {
 			add_action('pre_user_query', __CLASS__ . '::hide_administrators');
 			add_filter('views_users', __CLASS__ . '::modify_user_count');
 		}
@@ -560,44 +565,25 @@ class BT {
 			self::$slug
 		);
 
-		// add custom taxonomies menus/submenus
+		// add custom posts/taxonomies menus/submenus
 
-		if (self::check(self::$taxes)) {
-			foreach (self::$taxes as $tax => $data) {
-				$label = self::label($tax);
-				$menu = $data['menu'] ?? false;
-				$t_icon = $data['icon'] ?? false;
-
-				if ($menu) {
-					add_menu_page(
-						$label,
-						$label,
-						'manage_options',
-						'/edit-tags.php?taxonomy=' . $tax,
-						'',
-						($t_icon) ? 'data:image/svg+xml;base64,' . $t_icon : $icon,
-						3
-					);
-				}
-				else {
-					add_submenu_page(
-						self::$slug,
-						$label,
-						$label,
-						'manage_options',
-						'/edit-tags.php?taxonomy=' . $tax
-					);
-				}
-			}			
+		if (_BT['bt_order'] == 'tp') {
+			self::add_posts_menus(3.9);
+			self::add_taxes_menus(3.1);
 		}
+		else {
+			self::add_posts_menus(3.1);			
+			self::add_taxes_menus(3.9);
+		}		
+	}
 
-		// add custom posts menus/submenus
-
+	public static function add_posts_menus($position) {
 		if (self::check(self::$posts)) {
 			foreach (self::$posts as $post => $data) {
 				$label = self::label($post);
 				$menu = $data['menu'] ?? false;
 				$p_icon = $data['icon'] ?? false;
+				$mp = $data['position'] ?? $position;
 
 				if ($menu) {
 					add_menu_page(
@@ -607,7 +593,7 @@ class BT {
 						'/edit.php?post_type=' . $post,
 						'',
 						($p_icon) ? 'data:image/svg+xml;base64,' . $p_icon : $icon,
-						3
+						$mp
 					);
 				}
 				else {
@@ -620,6 +606,38 @@ class BT {
 					);
 				}
 			}
+		}
+	}
+
+	public static function add_taxes_menus($position) {
+		if (self::check(self::$taxes)) {
+			foreach (self::$taxes as $tax => $data) {
+				$label = self::label($tax);
+				$menu = $data['menu'] ?? false;
+				$t_icon = $data['icon'] ?? false;
+				$mp = $data['position'] ?? $position;
+
+				if ($menu) {
+					add_menu_page(
+						$label,
+						$label,
+						'manage_options',
+						'/edit-tags.php?taxonomy=' . $tax,
+						'',
+						($t_icon) ? 'data:image/svg+xml;base64,' . $t_icon : $icon,
+						$mp
+					);
+				}
+				else {
+					add_submenu_page(
+						self::$slug,
+						$label,
+						$label,
+						'manage_options',
+						'/edit-tags.php?taxonomy=' . $tax
+					);
+				}
+			}			
 		}
 	}
 
@@ -654,6 +672,7 @@ class BT {
 
 		$name = self::$def['plugin'];
 		$form = self::$def['admin'];
+		$title = ucwords((_BT['bt_title'] != '') ? _BT['bt_title'] : self::$def['title']);
 
 		$dev_tabs = [
 			'posts',
@@ -664,8 +683,8 @@ class BT {
 		// build form
 
 		echo '<div id="' . $name . '-wrap" class="wrap">';
-			echo '<h1>' . $name . '</h1>';
-			echo '<p>Configure your ' . $name . ' settings...</p>';
+			echo '<h1>' . $title . '</h1>';
+			echo '<p>Configure your ' . $title . ' settings&hellip;</p>';
 			echo '<form id="' . $name . '-form" method="post">';
 				echo '<nav id="' . $name . '-nav" class="nav-tab-wrapper">';
 
@@ -784,7 +803,7 @@ class BT {
 		global $submenu_file, $current_screen, $pagenow;
 
 		if (self::check(self::$taxes)) {
-			foreach (self::$taxes as $tax => $type) {
+			foreach (self::$taxes as $tax => $data) {
 
 				if ($current_screen->id == 'edit-' . $tax) {
 					if ($pagenow == 'post.php') {
@@ -1168,7 +1187,6 @@ class BT {
 						background: #fff;
 						border: 2px solid #000;
 						border-radius: 99px;
-
 					}
 				}
 			}
@@ -1271,14 +1289,20 @@ class BT {
 		$override = apply_filters(self::$def['prefix'] . '_add_post_fields', false, $what, $type, $field, $fval, $keys);
 
 		if ($override) {
-			echo '<div class="field-title">';
-				echo '<label>' . $override['label'] . ':</label>';
-				echo '<span class="desc">' . $override['description'] . '</span>';
-			echo '</div>';
+			$overridden = (!is_array($override)) ? [$override] : $override;
 
-			echo '<div class="field-edit">';
-				echo $override['value'];
-			echo '</div>';
+			if (count($overridden) > 0) {
+				foreach ($overridden as $o) {
+					echo '<div class="field-title">';
+						echo '<label>' . $o['label'] . ':</label>';
+						echo '<span class="desc">' . $o['description'] . '</span>';
+					echo '</div>';
+
+					echo '<div class="field-edit">';
+						echo $o['value'];
+					echo '</div>';
+				}
+			}
 
 			return;
 		}
@@ -1318,6 +1342,22 @@ class BT {
 						ul.append('<li><img src="' + url + '"><span class="del" onclick="BT.' + field + '.del(' + i + ')">&times;</span></li>');
 					});
 				};
+			}
+
+			// wip
+
+			function time(e) {
+				this.field = e;
+				this.get = function() {
+					var v = $('#' + this.field).val();
+					return (v.includes(':')) ? v.split(':') : [0, 0];
+				};
+				this.set = function(h, m) {
+
+				}
+				$('#' + this.field).on('click', function(el) {
+
+				});
 			}
 		</script>
 <?php
@@ -1545,7 +1585,8 @@ class BT {
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<input type="email" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+						echo '<a data-id="' . $fid . '" href="mailto:' . $fval . '" class="button-primary email-button" style="width:5%"><i class="fa-solid fa-at"></i></a>';
+						echo '<input type="email" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:93%">';
 					break;
 				}
 				case 'website': {
@@ -1555,7 +1596,8 @@ class BT {
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+						echo '<a data-id="' . $fid . '" href="' . $fval . '" class="button-primary website-button" style="width:5%" target="_blank"><i class="fa-solid fa-globe"></i></a>';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:93%">';
 					break;
 				}
 				case 'display': {
@@ -1686,7 +1728,7 @@ class BT {
 							$loop = get_posts([
 								'post_type' => 'page',
 								'post_status' => 'publish',
-								'posts_per_page' => '-1',
+								'posts_per_page' => -1,
 								'orderby' => 'title',
 								'order' => 'ASC'
 							]);
@@ -1753,13 +1795,12 @@ class BT {
 	}
 
 	public static function post_metabox($post) {
-		$type = $post->post_type;
+		global $pagenow;
 
+		$type = $post->post_type;
 		$field_values = [];
 
-		$admin_url = parse_url(admin_url(sprintf(basename($_SERVER['REQUEST_URI']))));
-		$admin_path = str_replace('/wp-admin/', '', $admin_url['path']);
-		$new_post = ($admin_path == 'post-new.php') ? true : false;
+		$new_post = ($pagenow == 'post-new.php') ? true : false;
 
 		$prefix = self::prefix($type);
 		$keys = self::$posts[$type]['fields'] ?? [];
@@ -1770,7 +1811,7 @@ class BT {
 			}		
 		}
 
-		wp_nonce_field(plugins_url(__FILE__), 'wr_plugin_noncename');
+		wp_nonce_field(plugins_url(__FILE__), 'bt_nonce');
 		wp_enqueue_media();
 
 		self::gen_css();
@@ -1865,7 +1906,7 @@ class BT {
 							break;
 						}
 						default: {
-							echo apply_filters(strtolower(__CLASS__) . '_column_data', get_post_meta($id, $prefix . $field, true), $id, $column_name);
+							echo apply_filters(strtolower(__CLASS__) . '_post_column_data', get_post_meta($id, $prefix . $field, true), $id, $column_name);
 						}
 					}
 				}
@@ -1887,6 +1928,8 @@ class BT {
 			
 			$columns['date'] = 'Date';
 		}
+
+		$columns = apply_filters(strtolower(__CLASS__) . '_post_column_title', $columns);
 
 		return $columns;
 	}
@@ -2108,7 +2151,7 @@ class BT {
 <?php
 		}
 
-		wp_nonce_field(plugins_url(__FILE__), 'wr_plugin_noncename');
+		wp_nonce_field(plugins_url(__FILE__), 'bt_nonce');
 		wp_enqueue_media();
 
 		if (is_string($term)) {
@@ -2162,11 +2205,12 @@ class BT {
 								<div class="inside">
 <?php
 			$count = 0;
+			$only_ours = true;
 
 			if ($show_slug) {
 				$count++;
+				$only_ours = false;
 ?>
-									<p><?php echo $count; ?> of <?php echo count(self::$taxes[$taxonomy]['fields']); ?></p>
 									<div class="top">
 										<div class="field-title">
 											<label>Slug:</label>
@@ -2179,9 +2223,9 @@ class BT {
 
 			if ($hierarchical) {
 				$count++;
+				$only_ours = false;
 				$class = ($count == 1) ? 'top' : 'middle';
 ?>
-									<p><?php echo $count; ?> of <?php echo count(self::$taxes[$taxonomy]['fields']); ?></p>
 									<div class="<?php echo $class; ?>">
 										<div class="field-title">
 											<label>Parent <?php echo $label; ?>:</label>
@@ -2194,9 +2238,9 @@ class BT {
 
 			if ($show_description) {
 				$count++;
+				$only_ours = false;
 				$class = ($count == 1) ? 'top' : 'middle';
 ?>
-									<p><?php echo $count; ?> of <?php echo count(self::$taxes[$taxonomy]['fields']); ?></p>
 									<div class="<?php echo $class; ?>">
 										<div class="field-title">
 											<label>Description:</label>
@@ -2207,7 +2251,9 @@ class BT {
 <?php
 			}
 
-			$total = $count + count(self::$taxes[$taxonomy]['fields']);
+			if ($only_ours) {
+				$count++;
+			}
 
 			foreach (self::$taxes[$taxonomy]['fields'] as $field => $keys) {
 
@@ -2215,7 +2261,7 @@ class BT {
 
 				// set box class
 				switch ($count) {
-					case $total: {
+					case count(self::$taxes[$taxonomy]['fields']): {
 						$class = 'bottom';
 						break;
 					}
@@ -2229,7 +2275,6 @@ class BT {
 				}
 ?>
 								<div class="<?php echo $class; ?>">
-									<p><?php echo $count; ?> of <?php echo $total; ?></p>
 <?php
 				$fval = $field_values[$field] ?? '';
 
@@ -2298,13 +2343,13 @@ class BT {
 		unset($columns['slug']);
 		unset($columns['posts']);
 
-		$columns = apply_filters(strtolower(__CLASS__) . '_taxonomy_columns', $columns);
+		$columns = apply_filters(strtolower(__CLASS__) . '_taxonomy_column_title', $columns);
 
 		return $columns;
 	}
 
 	public static function taxonomy_custom_column_views($output, $column_key, $term_id) {
-		$output = apply_filters(strtolower(__CLASS__) . '_taxonomy_column', $output, $column_key, $term_id);
+		$output = apply_filters(strtolower(__CLASS__) . '_taxonomy_column_data', $output, $column_key, $term_id);
 
 		return $output;
 	}
@@ -2456,7 +2501,7 @@ class BT {
 									<div class="handle-actions hide-if-no-js"></div>
 								</div>
 <?php
-		wp_nonce_field(plugins_url(__FILE__), 'wr_plugin_noncename');
+		wp_nonce_field(plugins_url(__FILE__), 'bt_nonce');
 		wp_enqueue_media();
 
 		self::gen_css();
@@ -2471,7 +2516,7 @@ class BT {
 										let r = $('#role').detach();
 										r.css({'width':'99%'});
 <?php
-	if (_BT['st_hide_admin'] == 'yes' && !self::is_dev()) {
+	if (_BT['bt_hide_admin'] == 'yes' && !self::is_dev()) {
 ?>
 										r.find('option[value="administrator"]').remove();
 <?php
@@ -2712,13 +2757,13 @@ class BT {
 	public static function manage_users_columns($columns) {
 		unset($columns['posts']);
 
-		$columns = apply_filters(strtolower(__CLASS__) . '_user_columns', $columns);
+		$columns = apply_filters(strtolower(__CLASS__) . '_user_column_title', $columns);
 
 		return $columns;
 	}
 
 	public static function manage_users_custom_column($output, $column_key, $user_id) {
-		$output = apply_filters(strtolower(__CLASS__) . '_user_column', $output, $column_key, $user_id);
+		$output = apply_filters(strtolower(__CLASS__) . '_user_column_data', $output, $column_key, $user_id);
 
 		return $output;
 	}
@@ -3207,7 +3252,7 @@ class BT {
 				$objects = get_posts([
 					'post_type' => $type,
 					'post_status' => 'publish',
-					'posts_per_page' => '-1',
+					'posts_per_page' => -1,
 					'orderby' => 'id',
 					'order' => 'ASC'
 				]);

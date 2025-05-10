@@ -2850,7 +2850,7 @@ class BT {
 		$type = get_post_type($id);
 		$function = 'post';
 
-		if (!$type) {
+		if (!$type || $type == 'page') {
 			$type = get_term($id)->taxonomy;
 			$function = 'term';
 		}
@@ -2866,14 +2866,21 @@ class BT {
 		$type = get_post_type($id);
 		$function = 'post';
 
-		if (!$type) {
+		if (!$type || $type == 'page') {
 			$type = get_term($id)->taxonomy;
 			$function = 'term';
 		}
 
 		$data = call_user_func_array('get_' . $function . '_meta', [$id]);
 
-		return ($is_json) ? json_decode($data, true) : $data;
+		$result = [];
+
+		foreach ($data as $key => $value) {
+			$remove = self::prefix($type);
+			$result[str_replace($remove, '', $key)] = $value[0];
+		}
+
+		return ($is_json) ? json_decode($result, true) : $result;
 	}
 
 	// set a meta value of a field for a post or term
@@ -2985,6 +2992,70 @@ class BT {
 		}
 
 		return $terms;
+	}
+
+	// returns all posts of a type
+
+	public static function get_posts($type, $orderby = 'title', $order = 'ASC') {
+		return get_posts([
+			'post_type' => $type,
+			'post_status' => 'publish',
+			'posts_per_page' => -1,
+			'orderby' => $orderby,
+			'order' => $order
+		]);
+	}
+
+	// returns all posts of a type of a specific term
+
+	public static function get_posts_of_term($type, $tax, $term, $orderby = 'title', $order = 'ASC') {
+		return get_posts([
+			'post_type' => $type,
+			'post_status' => 'publish',
+			'posts_per_page' => -1,
+			'orderby' => $orderby,
+			'order' => $order,
+			'tax_query' => [
+				[
+					'taxonomy' => $tax,
+					'field' => 'slug',
+					'terms' => $term
+				]
+			]
+		]);
+	}
+
+	// returns all posts of a type sorted by a meta key/value
+
+	public static function get_posts_sort_by_meta($type, $meta_key, $order = 'ASC') {
+		return get_posts([
+			'post_type' => $type,
+			'post_status' => 'publish',
+			'posts_per_page' => -1,
+			'meta_key' => $meta_key,
+			'orderby' => 'meta_value',
+			'order' => $order
+		]);
+	}
+
+	// returns all posts of a type of a specific term sorted by a meta key/value
+
+	public static function get_posts_of_term_sort_by_meta($type, $tax, $term, $meta_key, $order = 'ASC') {
+		return get_posts([
+			'post_type' => $type,
+			'post_status' => 'publish',
+			'posts_per_page' => -1,
+			'tax_query' => [
+				[
+					'taxonomy' => $tax,
+					'field' => 'slug',
+					'terms' => $term
+				]
+			],
+			'meta_key' => $meta_key,
+			'orderby' => 'meta_value',
+			'order' => $order
+		]);
 	}
 
 

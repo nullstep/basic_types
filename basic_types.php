@@ -965,7 +965,7 @@ class BT {
 		return $messages;
 	}
 
-	
+
 	//    ▄▄▄▄███▄▄▄▄       ▄████████      ███         ▄████████  
 	//  ▄██▀▀▀███▀▀▀██▄    ███    ███  ▀█████████▄    ███    ███  
 	//  ███   ███   ███    ███    █▀      ▀███▀▀██    ███    ███  
@@ -982,12 +982,12 @@ class BT {
 			#<?php echo $idp; ?>_meta_box {
 				position: relative;
 
-				& .field-title {
+				.field-title {
 					position: absolute;
 					display: inline-block;
 					width: 18%;
 				}
-				& .field-edit {
+				.field-edit {
 					display: inline-block;
 					margin-left: 20%;
 					margin-bottom: 10px;
@@ -1000,6 +1000,12 @@ class BT {
 						vertical-align: middle;
 						margin-top: 10px;
 					}
+
+					.adjust {
+						position: relative;
+						top: -4px;
+						left: 5px;
+					}
 				}
 				& em, label {
 					display: inline-block;
@@ -1007,15 +1013,15 @@ class BT {
 					font-style: normal;
 					padding-top: 4px;
 				}
-				& .mcw {
+				.mcw {
 					padding-top: 6px;
 					margin-bottom: 8px;
 				}
-				& .mcw .label {
+				.mcw .label {
 					display: inline-block;
 					padding: 10px 15px 0 5px;
 				}
-				& .mcw .mc {
+				.mcw .mc {
 					appearance: none;
 					background-color: #dfe1e4;
 					border-radius: 72px;
@@ -1026,7 +1032,7 @@ class BT {
 					position: relative;
 					width: 30px;
 				}
-				& .mcw .mc::before {
+				.mcw .mc::before {
 					bottom: -6px;
 					content: "";
 					left: -6px;
@@ -1034,10 +1040,10 @@ class BT {
 					right: -6px;
 					top: -6px;
 				}
-				& .mcw .mc, .mcw .mc::after {
+				.mcw .mc, .mcw .mc::after {
 					transition: all 100ms ease-out;
 				}
-				& .mcw .mc::after {
+				.mcw .mc::after {
 					background-color: #fff;
 					border-radius: 50%;
 					content: "";
@@ -1047,24 +1053,24 @@ class BT {
 					top: 3px;
 					width: 14px;
 				}
-				& .mcw input[type=checkbox] {
+				.mcw input[type=checkbox] {
 					cursor: default;
 				}
-				& .mcw .mc:hover {
+				.mcw .mc:hover {
 					background-color: #c9cbcd;
 					transition-duration: 0s;
 				}
-				& .mcw .mc:checked {
+				.mcw .mc:checked {
 					background-color: var(--admin-highlight, #2271b1);
 				}
-				& .mcw .mc:checked::after {
+				.mcw .mc:checked::after {
 					background-color: #fff;
 					left: 13px;
 				}
-				& .mcw :focus:not(.focus-visible) {
+				.mcw :focus:not(.focus-visible) {
 					outline: 0;
 				}
-				& .mcw .mc:checked:hover {
+				.mcw .mc:checked:hover {
 					background-color: var(--admin-highlight, #2271b1);
 				}
 				& input[type=radio] {
@@ -1104,19 +1110,19 @@ class BT {
 					padding-bottom: 0;
 					border-bottom: 0;
 				}
-				& .switch {
+				.switch {
 					position: relative;
 					display: inline-block;
 					width: 50px;
 					height: 24px;
 					margin: 3px 0;
 				}
-				& .switch input {
+				.switch input {
 					opacity: 0;
 					width: 0;
 					height: 0;
 				}
-				& .slider {
+				.slider {
 					position: absolute;
 					cursor: pointer;
 					top: 0;
@@ -1127,7 +1133,7 @@ class BT {
 					transition: .4s;
 					border-radius: 24px;
 				}
-				& .slider:before {
+				.slider:before {
 					position: absolute;
 					content: "";
 					height: 20px;
@@ -1147,36 +1153,37 @@ class BT {
 				& input:checked + .slider:before {
 					transform: translateX(22px);
 				}
-				& .bt_data-view {
+				.bt_data-view {
 					display: inline-block;
 					width: 73%;
 					padding: 3px;
 					margin-top: 10px;
 				}
-				& .choose-colour-button {
+				.choose-colour-button {
 					margin-top: 9px;
 					height: 37px;
 				}
-				& .choose-file-button {
+				.choose-item-button,
+				.choose-file-button {
 					position: relative;
-					top: 6px;
+					top: 7px;
 					margin-right: 1px;
 					height: 36px;
 				}
-				& .plus-button {
+				.plus-button {
 					font-size: 2rem;
 					line-height: 25px;
 				}
-				& .view-file-button {
+				.view-file-button {
 					position: relative;
-					top: 6px;
+					top: 7px;
 					margin-left: 1px;
 					height: 36px;
 				}
-				& .button-primary:hover {
+				.button-primary:hover {
 					box-shadow: 0 0 100px 100px rgba(255,255,255,.3) inset;
 				}
-				& .bt-gallery-images li {
+				.bt-gallery-images li {
 					position: relative;
 					display: inline-block;
 					vertical-align: top;
@@ -1194,7 +1201,37 @@ class BT {
 						padding: 0;
 					}
 
-					& .del {
+					.del {
+						position: absolute;
+						top: 10px;
+						right: 10px;
+						width: 20px;
+						height: 20px;
+						text-align: center;
+						font-size: 24px;
+						line-height: 14px;
+						cursor: pointer;
+						user-select: none;
+						z-index: 999;
+						background: #fff;
+						border: 2px solid #000;
+						border-radius: 99px;
+					}
+				}
+				.bt-list-select {
+					min-width: 150px;
+				}
+				.bt-list-items li {
+					position: relative;
+					display: inline-block;
+					vertical-align: top;
+					width: 150px;
+					margin: 0 10px 10px 0;
+					padding: 5px 20px 5px 5px;
+					border: 1px solid #8c8f94;
+					border-radius: 4px;
+
+					.del {
 						position: absolute;
 						top: 10px;
 						right: 10px;
@@ -1265,8 +1302,78 @@ class BT {
 	public static function gen_js() {
 ?>
 		<script>
-			$(function(){
-				var mediaUploader, bid;
+			window.BT = {};
+
+			function gallery(e) {
+				this.sub = <?php echo (get_option('uploads_use_yearmonth_folders')) ? 1 : 0; ?>;
+				this.field = e;
+				this.get = function() {
+					var a = $('#' + this.field).val().split(',');
+					return a.filter((val) => val !== '');
+				};
+				this.set = function(imgs) {
+					$('#' + this.field).val(imgs.join());
+				};
+				this.del = function(index) {
+					var imgs = this.get();
+					imgs.splice(index, 1);
+					this.set(imgs);
+					this.gen();
+				};
+				this.add = function(img) {
+					var imgs = this.get();
+					imgs.push(img);
+					this.set(imgs);
+					this.gen();
+				};
+				this.gen = function() {
+					var field = this.field;
+					var sub = this.sub;
+					var ul = $('#' + field + '_gallery');
+					ul.empty();
+					var imgs = this.get();
+					$.each(imgs, function(i, v) {
+						var url = (sub == 1) ? '<?php echo content_url(); ?>/uploads' + v : '<?php echo wp_get_upload_dir()['url']; ?>/' + v;
+						ul.append('<li><img src="' + url + '"><span class="del" onclick="window.BT.' + field + '.del(' + i + ')">&times;</span></li>');
+					});
+				};
+			}
+
+			function list(e) {
+				this.field = e;
+				this.get = function() {
+					var a = $('#' + this.field).val().split(',');
+					return a.filter((val) => val !== '');
+				};
+				this.set = function(items) {
+					$('#' + this.field).val(items.join());
+				};
+				this.del = function(index) {
+					var items = this.get();
+					items.splice(index, 1);
+					this.set(items);
+					this.gen();
+				};
+				this.add = function(item) {
+					var items = this.get();
+					items.push(item);
+					this.set(items);
+					this.gen();
+				};
+				this.gen = function() {
+					var field = this.field;
+					var ul = $('#' + field + '_list');
+					ul.empty();
+					var items = this.get();
+					$.each(items, function(i, v) {
+						var text = $('#selector_' + field + ' option[value="' + v + '"]').text();
+						ul.append('<li><p>' + text + '</p><span class="del" onclick="window.BT.' + field + '.del(' + i + ')">&times;</span></li>');
+					});
+				};
+			}
+
+			jQuery(function($) {
+				var mediaUploader, bid, sub = <?php echo (get_option('uploads_use_yearmonth_folders')) ? 1 : 0; ?>;
 				$('.choose-file-button').on('click', function(e) {
 					bid = $(this).data('id');
 					e.preventDefault();
@@ -1288,10 +1395,9 @@ class BT {
 					}, this);
 					mediaUploader.on('select', function() {
 						var attachment = mediaUploader.state().get('selection').first().toJSON();
-						var i = (BT[bid].sub) ? attachment.url : attachment.url.split('/').pop();
+						var i = (sub) ? attachment.url.substring(attachment.url.indexOf('uploads') + 7) : attachment.url.split('/').pop();
 						if ($('#' + bid).hasClass('bt-gallery')) {
-							var i = (BT[bid].sub) ? attachment.url.substring(attachment.url.indexOf('uploads') + 7) : attachment.url.split('/').pop();
-							BT[bid].add(i);
+							window.BT[bid].add(i);
 						}
 						else {
 							$('#' + bid).val(i);
@@ -1328,61 +1434,7 @@ class BT {
 
 			return;
 		}
-?>
-		<script>
-			var BT = {};
-			function gallery(e) {
-				this.sub = <?php echo (get_option('uploads_use_yearmonth_folders')) ? 1 : 0; ?>;
-				this.field = e;
-				this.get = function() {
-					var a = $('#' + this.field).val().split(',');
-					return a.filter((val) => val !== '');
-				};
-				this.set = function(imgs) {
-					$('#' + this.field).val(imgs.join());
-				};
-				this.del = function(index) {
-					var imgs = this.get();
-					imgs.splice(index, 1);
-					this.set(imgs);
-					this.gen();
-				};
-				this.add = function(img) {
-					var imgs = this.get();
-					imgs.push(img);
-					this.set(imgs);
-					this.gen();
-				};
-				this.gen = function() {
-					var field = this.field;
-					var sub = this.sub;
-					var ul = $('#' + field + '_gallery');
-					ul.empty();
-					var imgs = this.get();
-					$.each(imgs, function(i, v) {
-						var url = (sub == 1) ? '<?php echo content_url(); ?>/uploads' + v : '<?php echo wp_get_upload_dir()['url']; ?>/' + v;
-						ul.append('<li><img src="' + url + '"><span class="del" onclick="BT.' + field + '.del(' + i + ')">&times;</span></li>');
-					});
-				};
-			}
 
-			// wip
-
-			function time(e) {
-				this.field = e;
-				this.get = function() {
-					var v = $('#' + this.field).val();
-					return (v.includes(':')) ? v.split(':') : [0, 0];
-				};
-				this.set = function(h, m) {
-
-				}
-				$('#' + this.field).on('click', function(el) {
-
-				});
-			}
-		</script>
-<?php
 		if (!empty($keys['linked'])) {
 			// this is a linked id field
 
@@ -1456,7 +1508,7 @@ class BT {
 						$loop = get_posts([
 							'post_type' => $keys['linked'],
 							'post_status' => 'publish',
-							'posts_per_page' => '-1',
+							'posts_per_page' => -1,
 							'orderby' => 'title',
 							'order' => 'ASC'
 						]);
@@ -1786,7 +1838,65 @@ class BT {
 						echo '<div class="button button-primary choose-file-button plus-button" data-id="' . $fid . '">+</div>';
 						echo '<ul class="bt-gallery-images" id="' . $fid . '_gallery"></ul>';
 						echo '<script>';
-							echo 'var g = new gallery("' . $fid . '"); g.gen(); BT.' . $fid . ' = g;';
+							echo 'var g = new gallery("' . $fid . '"); g.gen(); window.BT.' . $fid . ' = g;';
+						echo '</script>';
+					break;
+				}
+				case 'list': {
+							echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+
+					$options = [];
+					$linked = $keys['linked_type'] ?? null;
+
+					if ($linked) {
+						$posts = get_posts([
+							'post_type' => $linked,
+							'post_status' => 'publish',
+							'posts_per_page' => '-1',
+							'orderby' => 'title',
+							'order' => 'ASC'
+						]);
+
+						if (is_array($posts) && count($posts) > 0) {
+							foreach ($posts as $p) {
+								$options[] = [
+									'id' => $p->ID,
+									'title' => $p->post_title
+								];
+							}
+						}
+					}
+
+					echo '<div class="field-edit">';
+						echo '<input class="bt-list" type="hidden" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
+						echo '<div class="button button-primary choose-item-button plus-button" data-id="' . $fid . '">+</div>';
+						echo '<span id="select_' . $fid . '" class="hidden adjust">';
+							echo '<select id="selector_' . $fid . '" class="bt-list-select">';
+								echo '<option value="0">Please Select...</option>';
+								foreach ($options as $option) {
+									echo '<option value="' . $option['id'] . '">' . $option['title'] . '</option>';
+								}
+							echo '</select>';
+						echo '</span>';
+						echo '<ul class="bt-list-items" id="' . $fid . '_list"></ul>';
+						echo '<script>';
+							echo 'var l = new list("' . $fid . '"); l.gen(); BT.' . $fid . ' = l;';
+							echo 'jQuery(function($){';
+								echo '$("#selector_' . $fid . '").on("change", function() {';
+									echo 'var i = $(this).val();';
+									echo 'window.BT.' . $fid . '.add(i);';
+									echo 'window.BT.' . $fid . '.gen();';
+									echo '$(this).val("0");';
+									echo '$("#select_' . $fid . '").hide();';
+								echo '});';
+								echo '$(".choose-item-button").on("click", function(e) {';
+									echo '$("#select_' . $fid . '").show();';
+								echo '});';
+							echo '});';
 						echo '</script>';
 					break;
 				}
@@ -1794,7 +1904,8 @@ class BT {
 
 			echo '</div>';
 		}
-	}	
+	}
+
 
 	//     ▄███████▄   ▄██████▄      ▄████████      ███      
 	//    ███    ███  ███    ███    ███    ███  ▀█████████▄  
@@ -1837,6 +1948,7 @@ class BT {
 		wp_enqueue_media();
 
 		self::gen_css();
+		self::gen_js();
 ?>
 		<script>
 			var $ = jQuery;
@@ -1851,7 +1963,7 @@ class BT {
 
 				// set box class
 				switch ($count) {
-					case count(self::$posts[$type]): {
+					case count(self::$posts[$type]['fields']): {
 						$class = 'bottom';
 						break;
 					}
@@ -1880,8 +1992,6 @@ class BT {
 ?>
 		</div>
 <?php
-
-		self::gen_js();
 	}
 
 	// save posts data

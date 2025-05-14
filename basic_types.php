@@ -226,6 +226,7 @@ class BT {
 		add_action('pre_get_posts', __CLASS__ . '::sort_custom_column_query');
 		add_action('admin_footer', __CLASS__ . '::post_list_buttons');
 		add_action('admin_head', __CLASS__ . '::set_vars');
+		add_action('restrict_manage_posts', __CLASS__ . '::add_post_filters');
 
 		add_filter('parent_file', __CLASS__ . '::set_current_menu');
 
@@ -267,6 +268,11 @@ class BT {
 		// register our ajax handler
 
 		add_action('wp_ajax_' . self::$def['prefix'] . '_ajax', __CLASS__ . '::ajax');
+
+		// register our extended search
+
+		add_action('pre_get_posts', __CLASS__ . '::posts_search');
+		add_filter('terms_clauses', __CLASS__ . '::terms_search', 10, 3);
 
 		// and we're done
 	}
@@ -993,7 +999,7 @@ class BT {
 					margin-bottom: 10px;
 					width: 80%;
 
-					& input, select, textarea {
+					input, select, textarea {
 						box-sizing: border-box;
 						display: inline-block;
 						padding: 3px;
@@ -1007,7 +1013,7 @@ class BT {
 						left: 5px;
 					}
 				}
-				& em, label {
+				em, label {
 					display: inline-block;
 					font-weight: 700;
 					font-style: normal;
@@ -1073,7 +1079,7 @@ class BT {
 				.mcw .mc:checked:hover {
 					background-color: var(--admin-highlight, #2271b1);
 				}
-				& input[type=radio] {
+				input[type=radio] {
 					margin-right: 20px;
 					width: 20px;
 					height: 20px;
@@ -1081,30 +1087,30 @@ class BT {
 					appearance: none;
 					background-color: #fff;
 				}
-				& input[type=radio]:checked::before, input[type=radio]:checked {
+				input[type=radio]:checked::before, input[type=radio]:checked {
 					background-color: var(--admin-highlight, #2271b1);
 					border: 2px solid var(--admin-highlight, #2271b1);
 				}
-				& span.desc {
+				span.desc {
 					display: block;
 					padding-top: 0px;
 					font-style: italic;
 					font-size: 12px;
 				}
-				& div.middle {
+				div.middle {
 					position: relative;
 					margin-bottom: 10px;
 					padding-bottom: 10px;
 					border-bottom: 1px dashed #ddd;
 				}
-				& div.top {
+				div.top {
 					position: relative;
 					margin-top: 10px;
 					margin-bottom: 10px;
 					padding-bottom: 10px;
 					border-bottom: 1px dashed #ddd;
 				}
-				& div.bottom {
+				div.bottom {
 					position: relative;
 					margin-bottom: 0;
 					padding-bottom: 0;
@@ -1144,13 +1150,13 @@ class BT {
 					transition: .4s;
 					border-radius: 50%;
 				}
-				& input:checked + .slider {
+				input:checked + .slider {
 					background-color: var(--admin-highlight, #2271b1);
 				}
-				& input:focus + .slider {
+				input:focus + .slider {
 					box-shadow: 0 0 1px var(--admin-highlight, #2271b1);
 				}
-				& input:checked + .slider:before {
+				input:checked + .slider:before {
 					transform: translateX(22px);
 				}
 				.bt_data-view {
@@ -1193,7 +1199,7 @@ class BT {
 					border: 1px solid #8c8f94;
 					border-radius: 4px;
 
-					& img {
+					img {
 						display: block;
 						width: 100%;
 						height: auto;
@@ -1281,7 +1287,7 @@ class BT {
 			#application-passwords-section {
 				display: none;
 
-				& h2 {
+				h2 {
 					padding: 0;
 					font-size: 1.3em;
 				}
@@ -1302,10 +1308,11 @@ class BT {
 	public static function gen_js() {
 ?>
 		<script>
-			window.BT = {};
+			window.BT = {
+				sub: <?php echo (get_option('uploads_use_yearmonth_folders')) ? 1 : 0; ?>
+			};
 
 			function gallery(e) {
-				this.sub = <?php echo (get_option('uploads_use_yearmonth_folders')) ? 1 : 0; ?>;
 				this.field = e;
 				this.get = function() {
 					var a = $('#' + this.field).val().split(',');
@@ -1328,12 +1335,11 @@ class BT {
 				};
 				this.gen = function() {
 					var field = this.field;
-					var sub = this.sub;
 					var ul = $('#' + field + '_gallery');
 					ul.empty();
 					var imgs = this.get();
 					$.each(imgs, function(i, v) {
-						var url = (sub == 1) ? '<?php echo content_url(); ?>/uploads' + v : '<?php echo wp_get_upload_dir()['url']; ?>/' + v;
+						var url = (window.BT.sub == 1) ? '<?php echo content_url(); ?>/uploads' + v : '<?php echo wp_get_upload_dir()['url']; ?>/' + v;
 						ul.append('<li><img src="' + url + '"><span class="del" onclick="window.BT.' + field + '.del(' + i + ')">&times;</span></li>');
 					});
 				};
@@ -1395,7 +1401,7 @@ class BT {
 					}, this);
 					mediaUploader.on('select', function() {
 						var attachment = mediaUploader.state().get('selection').first().toJSON();
-						var i = (sub) ? attachment.url.substring(attachment.url.indexOf('uploads') + 7) : attachment.url.split('/').pop();
+						var i = (window.BT.sub) ? attachment.url.substring(attachment.url.indexOf('uploads') + 7) : attachment.url.split('/').pop();
 						if ($('#' + bid).hasClass('bt-gallery')) {
 							window.BT[bid].add(i);
 						}
@@ -1884,8 +1890,8 @@ class BT {
 						echo '</span>';
 						echo '<ul class="bt-list-items" id="' . $fid . '_list"></ul>';
 						echo '<script>';
-							echo 'var l = new list("' . $fid . '"); l.gen(); BT.' . $fid . ' = l;';
-							echo 'jQuery(function($){';
+							echo 'var l = new list("' . $fid . '"); l.gen(); window.BT.' . $fid . ' = l;';
+							echo 'jQuery(function($) {';
 								echo '$("#selector_' . $fid . '").on("change", function() {';
 									echo 'var i = $(this).val();';
 									echo 'window.BT.' . $fid . '.add(i);';
@@ -2155,6 +2161,40 @@ class BT {
 		}
 	}
 
+	// add filters to post list page
+
+	public static function add_post_filters() {
+		global $typenow, $wpdb;
+
+		if (!isset(self::$posts[$typenow])) {
+			// not one of ours
+			return;
+		}
+
+		$taxes = get_object_taxonomies($typenow);
+
+		foreach ($taxes as $tax) {
+			$terms = get_terms($tax);
+
+			if (!empty($terms)) {
+				echo '<select name="' . $tax . '" id="' . $tax . '" class="postform">';
+				echo '<option value="">' . 'All ' . self::label($tax) . '</option>';
+
+				$added = [];
+
+				foreach ($terms as $term) {
+					if (!in_array($term->slug, $added)) {
+						$selected = (isset($_GET[$tax]) && $_GET[$tax] == $term->slug) ? ' selected="selected"' : '';
+						echo '<option value="' . $term->slug . '"' . $selected . '>' . $term->name . '</option>';
+						$added[] = $term->slug;
+					}
+				}
+
+				echo '</select>';
+			}
+		}
+	}
+
 
 	//      ███         ▄████████  ▀████    ▐████▀  
 	//  ▀█████████▄    ███    ███    ███▌   ████▀   
@@ -2313,6 +2353,7 @@ class BT {
 			$desc_element = ($action == 'new') ? 'tag-description' : 'description';
 
 			self::gen_css();
+			self::gen_js();
 ?>
 								<script>
 									var $ = jQuery;
@@ -2420,10 +2461,6 @@ class BT {
 			}
 ?>
 							</div>
-<?php
-		
-			self::gen_js();
-?>
 						</div>
 					</div>
 				</div>
@@ -2640,6 +2677,7 @@ class BT {
 		wp_enqueue_media();
 
 		self::gen_css();
+		self::gen_js();
 ?>
 								<script>
 									var $ = jQuery;
@@ -2836,8 +2874,6 @@ class BT {
 									</div>
 <?php			
 		}
-
-		self::gen_js();
 ?>
 						</div>
 					</div>
@@ -3391,6 +3427,85 @@ class BT {
 			}
 		</script>
 <?php
+	}
+
+	//     ▄████████     ▄████████     ▄████████     ▄████████   ▄████████     ▄█    █▄     
+	//    ███    ███    ███    ███    ███    ███    ███    ███  ███    ███    ███    ███    
+	//    ███    █▀     ███    █▀     ███    ███    ███    ███  ███    █▀     ███    ███    
+	//    ███          ▄███▄▄▄        ███    ███   ▄███▄▄▄▄██▀  ███          ▄███▄▄▄▄███▄▄  
+	//  ▀███████████  ▀▀███▀▀▀      ▀███████████  ▀▀███▀▀▀▀▀    ███         ▀▀███▀▀▀▀███▀   
+	//           ███    ███    █▄     ███    ███  ▀███████████  ███    █▄     ███    ███    
+	//     ▄█    ███    ███    ███    ███    ███    ███    ███  ███    ███    ███    ███    
+	//   ▄████████▀     ██████████    ███    █▀     ███    ███  ████████▀     ███    █▀
+
+	// extend searches in admin area for posts/taxonomies
+	// to include meta data values for our custom types
+
+	public static function posts_search($query) {
+		if (!is_admin() || !$query->is_main_query() || !$query->is_search()) {
+			return;
+		}
+
+		$screen = get_current_screen();
+		if ($screen && $screen->base !== 'edit') {
+			return;
+		}
+
+		if (!isset(self::$posts[$query->get('post_type')])) {
+			// not one of ours
+			return;
+		}
+
+		ST::log('search');
+
+		add_filter('posts_join', __CLASS__ . '::posts_search_join');
+		add_filter('posts_where', __CLASS__ . '::posts_search_where');
+		add_filter('posts_distinct', function() { return 'DISTINCT'; });
+	}
+
+	public static function posts_search_join($join) {
+	    global $wpdb;
+
+	    ST::log('join');
+
+	    return $join . " LEFT JOIN {$wpdb->postmeta} AS pm ON pm.post_id = {$wpdb->posts}.ID ";
+	}
+
+	public static function posts_search_where($where) {
+	    global $wpdb;
+
+	    ST::log('where');
+
+	    if (!isset($_GET['s']) || empty($_GET['s'])) {
+	        return $where;
+		}
+
+		$search = esc_sql($wpdb->esc_like(sanitize_text_field($_GET['s'])));
+		return $where . " OR pm.meta_value LIKE '%{$search}%'";
+	}
+
+	public static function terms_search($clauses, $taxonomies, $args) {
+		if (!is_admin() || !isset($_GET['s']) || empty($taxonomies)) {
+			return $clauses;
+		}
+
+		if (empty(array_intersect_key(self::$taxes, array_flip($taxonomies)))) {
+			// not one of ours
+			return $clauses;
+		}
+
+		global $wpdb;
+
+		$clauses['fields'] = 'DISTINCT ' . $clauses['fields'];
+
+		$clauses['join'] .= " LEFT JOIN {$wpdb->termmeta} tm ON t.term_id = tm.term_id ";
+
+		$search = esc_sql($wpdb->esc_like($args['search']));
+		$clauses['where'] .= " OR (tm.meta_value LIKE '%$search%') ";
+
+		$clauses['groupby'] = 't.term_id';
+
+		return $clauses;
 	}
 
 

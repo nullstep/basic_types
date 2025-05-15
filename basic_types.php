@@ -227,6 +227,7 @@ class BT {
 		add_action('admin_footer', __CLASS__ . '::post_list_buttons');
 		add_action('admin_head', __CLASS__ . '::set_vars');
 		add_action('restrict_manage_posts', __CLASS__ . '::add_post_filters');
+		add_filter('parse_query', __CLASS__ . '::apply_post_filters');
 
 		add_filter('parent_file', __CLASS__ . '::set_current_menu');
 
@@ -1379,7 +1380,7 @@ class BT {
 			}
 
 			jQuery(function($) {
-				var mediaUploader, bid, sub = <?php echo (get_option('uploads_use_yearmonth_folders')) ? 1 : 0; ?>;
+				var mediaUploader, bid;
 				$('.choose-file-button').on('click', function(e) {
 					bid = $(this).data('id');
 					e.preventDefault();
@@ -2183,14 +2184,41 @@ class BT {
 				$added = [];
 
 				foreach ($terms as $term) {
-					if (!in_array($term->slug, $added)) {
-						$selected = (isset($_GET[$tax]) && $_GET[$tax] == $term->slug) ? ' selected="selected"' : '';
+					if (!in_array($term->term_id, $added)) {
+						$selected = (isset($_GET[$tax]) && ($_GET[$tax] == $term->slug)) ? ' selected="selected"' : '';
 						echo '<option value="' . $term->slug . '"' . $selected . '>' . $term->name . '</option>';
-						$added[] = $term->slug;
+						$added[] = $term->term_id;
 					}
 				}
 
 				echo '</select>';
+			}
+		}
+	}
+
+	// apply filters to post list page
+
+	public static function apply_post_filters($query) {
+		global $pagenow;
+
+		if (!is_admin() || !$query->is_main_query()) {
+			return;
+		}
+
+		$type = $_GET['post_type'] ?? null;
+
+		if (!isset(self::$posts[$typenow])) {
+			// not one of ours
+			return;
+		}
+
+		if ($pagenow === 'edit.php' && $type) {
+			$taxes = get_object_taxonomies($type);
+
+			foreach ($taxes as $tax) {
+				if (!empty($_GET[$tax])) {
+					$query->query_vars[$tax] = $_GET[$tax];
+				}
 			}
 		}
 	}
@@ -3452,11 +3480,8 @@ class BT {
 		}
 
 		if (!isset(self::$posts[$query->get('post_type')])) {
-			// not one of ours
 			return;
 		}
-
-		ST::log('search');
 
 		add_filter('posts_join', __CLASS__ . '::posts_search_join');
 		add_filter('posts_where', __CLASS__ . '::posts_search_where');
@@ -3466,15 +3491,11 @@ class BT {
 	public static function posts_search_join($join) {
 	    global $wpdb;
 
-	    ST::log('join');
-
 	    return $join . " LEFT JOIN {$wpdb->postmeta} AS pm ON pm.post_id = {$wpdb->posts}.ID ";
 	}
 
 	public static function posts_search_where($where) {
 	    global $wpdb;
-
-	    ST::log('where');
 
 	    if (!isset($_GET['s']) || empty($_GET['s'])) {
 	        return $where;
@@ -3485,12 +3506,11 @@ class BT {
 	}
 
 	public static function terms_search($clauses, $taxonomies, $args) {
-		if (!is_admin() || !isset($_GET['s']) || empty($taxonomies)) {
+		if (empty($args['search']) || !is_admin() || !isset($_GET['s']) || empty($taxonomies)) {
 			return $clauses;
 		}
 
 		if (empty(array_intersect_key(self::$taxes, array_flip($taxonomies)))) {
-			// not one of ours
 			return $clauses;
 		}
 

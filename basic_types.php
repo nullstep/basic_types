@@ -53,13 +53,13 @@ class BT {
 				'type' => 'string',
 				'default' => ''
 			],
-			'bt_transfer' => [
-				'type' => 'string',
-				'default' => 'no'
-			],
 			'bt_hide_admin' => [
 				'type' => 'string',
 				'default' => 'yes'
+			],
+			'bt_transfer' => [
+				'type' => 'string',
+				'default' => 'no'
 			],
 			'bt_fa' => [
 				'type' => 'string',

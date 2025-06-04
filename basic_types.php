@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.0.4
+ * Version: 2.1.1
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -23,6 +23,7 @@ class BT {
 	public static $roles;
 	
 	protected static $slug;
+	protected static $done = false;
 
 	//   ▄█   ███▄▄▄▄▄     ▄█       ███      
 	//  ███   ███▀▀▀▀██▄  ███   ▀█████████▄  
@@ -167,6 +168,11 @@ class BT {
 						'type' => 'code'
 					]
 				]
+			],
+			'misc' => [
+				'label' => 'Misc Functions',
+				'columns' => 6,
+				'buttons' => true
 			]
 		];
 
@@ -184,6 +190,13 @@ class BT {
 				'args' => [],
 				'permission_callback' => 'permissions_admin',
 				'path' => 'settings'
+			],
+			[
+				'methods' => 'GET',
+				'callback' => 'get_records',
+				'args' => [],
+				'permission_callback' => 'permissions_admin',
+				'path' => 'data'
 			]
 		];
 
@@ -219,6 +232,7 @@ class BT {
 
 		// actions and filters
 
+		add_action('admin_footer', __CLASS__ . '::dialog_and_popover');
 		add_action('admin_enqueue_scripts', __CLASS__ . '::admin_scripts');
 		add_action('add_meta_boxes', __CLASS__ . '::add_metaboxes');
 		add_action('edit_form_top', __CLASS__ . '::add_buttons_to_post_edit');
@@ -318,6 +332,8 @@ class BT {
 					'rewrite' => ['slug' => $type]
 				]);
 			}
+
+			add_action('admin_footer-post-new.php', __CLASS__ . '::auto_taxonomies');
 		}
 	}
 
@@ -425,6 +441,84 @@ class BT {
 		return $args;
 	}
 
+	// records fetch api
+
+	public static function get_records(?WP_REST_Request $request = null) {
+		global $wpdb;
+
+		$type = $request->get_param('type');
+		$page = (int)$request->get_param('page');
+		$per = (int)$request->get_param('per');
+		$taxes = (function_exists('bt_fetch_taxes')) ? bt_fetch_taxes($type) : [];
+		$search = '%' . $wpdb->esc_like($request->get_param('search')) . '%';
+		$offset = ($page - 1) * $per;
+
+		$query_ids = "SELECT DISTINCT p.ID FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE p.post_type = %s AND p.post_status = 'publish' AND (p.post_title LIKE %s OR pm.meta_value LIKE %s) LIMIT %d OFFSET %d";
+
+		$post_ids = $wpdb->get_col(
+			$wpdb->prepare($query_ids, $type, $search, $search, $per, $offset)
+		);
+
+		$query_count = "SELECT COUNT(DISTINCT p.ID) FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE p.post_type = %s AND p.post_status = 'publish' AND (p.post_title LIKE %s OR pm.meta_value LIKE %s)";
+
+		$total_count = $wpdb->get_var(
+			$wpdb->prepare($query_count, $type, $search, $search)
+		);
+
+		$results = [];
+
+		if (!empty($post_ids)) {
+			$posts = get_posts([
+				'post__in' => $post_ids,
+				'post_type' => $type,
+				'orderby' => 'post__in',
+				'posts_per_page' => -1,
+			]);
+
+			foreach ($posts as $post) {
+				$term_data = [];
+
+				if (count($taxes) > 0) {
+					foreach ($taxes as $tax) {
+						$terms = get_the_terms($post->ID, $tax);
+						$term_data[$tax] = ($terms && !is_wp_error($terms)) ? wp_list_pluck($terms, 'name') : [];
+					}
+				}
+
+				$results[] = [
+					'id' => $post->ID,
+					'title' => get_the_title($post),
+					'terms' => $term_data,
+				];
+			}
+		}
+
+		$result = [
+			'results' => $results,
+			'search' => $search,
+			'type' => $type,
+			'total' => (int)$total_count,
+			'page' => $page,
+			'per' => $per,
+			'pages' => ceil($total_count / $per)
+		];
+
+		return ($request) ? rest_ensure_response($result) : $result;
+	}
+
+	public static function data_api() {
+		wp_register_script('bt', '');
+		wp_enqueue_script('bt');
+
+		wp_add_inline_script('bt', 'const ' . self::$def['plugin'] . ' = ' . json_encode(
+			['api' => [
+				'url' => esc_url_raw(rest_url(self::$def['plugin'] . '-api/v1/data')),
+				'nonce' => wp_create_nonce('wp_rest')
+			]]
+		));
+	}
+
+
 	//     ▄████████     ▄████████      ███          ███       ▄█   ███▄▄▄▄▄       ▄██████▄      ▄████████  
 	//    ███    ███    ███    ███  ▀█████████▄  ▀█████████▄  ███   ███▀▀▀▀██▄    ███    ███    ███    ███  
 	//    ███    █▀     ███    █▀      ▀███▀▀██     ▀███▀▀██  ███▌  ███    ███    ███    █▀     ███    █▀   
@@ -434,7 +528,7 @@ class BT {
 	//     ▄█    ███    ███    ███      ███          ███      ███   ███    ███    ███    ███     ▄█    ███  
 	//   ▄████████▀     ██████████     ▄████▀       ▄████▀    █▀     ▀█    █▀     ████████▀    ▄████████▀
 
-	public static function get_settings(WP_REST_Request $request = null) {
+	public static function get_settings(?WP_REST_Request $request = null) {
 		$defaults = [];
 
 		foreach (self::$def['args'] as $key => $val) {
@@ -972,6 +1066,67 @@ class BT {
 		return $messages;
 	}
 
+	// dialog box and popover setup
+
+	public static function dialog_and_popover() {
+		$nav = '';
+
+		$tabs = [
+			'search'
+		];
+
+		$tabs = apply_filters(strtolower(__CLASS__) . '_dialog_tabs', $tabs);
+
+		if ($tabs && is_array($tabs) && count($tabs) > 0) {
+			$nav .= '<nav id="bt-dlg-nav" class="nav-tab-wrapper">';
+
+			foreach ($tabs as $tab) {
+				$nav .= '<a href="#tab-' . $tab . '" class="nav-tab caps">' . $tab . '</a>';
+			}
+
+			$nav .= '</nav>';
+		}
+
+		$content = '<div class="tab-content" id="tab-search"></div>';
+
+		$content = apply_filters(strtolower(__CLASS__) . '_dialog_content', $content);
+
+		$html = <<<HTML
+			<dialog id="bt-view">
+				<div class="content">
+					<div class="header">
+						<h2></h2>
+						<span class="close" onclick="window.BT.dlg('close', 'bt-view');">&times;</span>
+					</div>
+					<div class="body">
+						{$nav}
+						{$content}
+					</div>
+					<div class="footer">
+						<span class="button button-primary" id="dlg-confirm"><i class="fa-solid fa-check"></i> Confirm</span>
+						<span class="button button-secondary" id="dlg-cancel" onclick="window.BT.dlg('close', 'bt-view');"><i class="fa-solid fa-xmark"></i></i> Cancel</span>
+					</div>
+				</div>
+			</dialog>
+			<script>
+				jQuery(function($) {
+					$('#bt-view .tab-content').eq(0).show();
+					$('#bt-view .nav-tab').eq(0).addClass('nav-tab-active');
+					$('#bt-view nav a').on('click', function(e) {
+						e.preventDefault();
+						$('#bt-view .nav-tab').removeClass('nav-tab-active');
+						var tab = $(this).attr('href');
+						$('#bt-view .tab-content').hide();
+						$(this).addClass('nav-tab-active');
+						$(tab).show();
+					});
+				});
+			</script>
+			<div id="bt-popup" popover></div>
+HTML;
+		echo $html;
+	}
+
 
 	//    ▄▄▄▄███▄▄▄▄       ▄████████      ███         ▄████████  
 	//  ▄██▀▀▀███▀▀▀██▄    ███    ███  ▀█████████▄    ███    ███  
@@ -1170,8 +1325,18 @@ class BT {
 					margin-top: 9px;
 					height: 37px;
 				}
+				.email-button,
+				.website-button {
+					position: relative;
+					top: 6px;
+					margin-right: 1px;
+					height: 36px;
+					line-height: 33px;
+					text-align: center;
+				}
 				.choose-item-button,
-				.choose-file-button {
+				.choose-file-button,
+				.view-file-button {
 					position: relative;
 					top: 7px;
 					margin-right: 1px;
@@ -1180,12 +1345,6 @@ class BT {
 				.plus-button {
 					font-size: 2rem;
 					line-height: 25px;
-				}
-				.view-file-button {
-					position: relative;
-					top: 7px;
-					margin-left: 1px;
-					height: 36px;
 				}
 				.button-primary:hover {
 					box-shadow: 0 0 100px 100px rgba(255,255,255,.3) inset;
@@ -1279,6 +1438,13 @@ class BT {
 					}
 				}
 			}
+			#postbox-container-1 {
+				.bt-postbox {
+					.inside {
+						padding-top: 6px;
+					}
+				}
+			}
 			#major-publishing-actions {
 				border-top: none;
 			}
@@ -1302,6 +1468,168 @@ class BT {
 			#message p a {
 				display: none;
 			}
+			.button-align {
+				display: inline-block;
+				padding: 5px 10px 0;
+			}
+			dialog#bt-view {
+				border: none;
+				width: 66.6vw;
+				height: 90vh;
+				position: fixed;
+				padding: 0;
+				margin: 5vh auto;
+				overflow-y: auto;
+				overflow-x: hidden;
+
+				.caps {
+					text-transform: capitalize;
+				}
+
+				.content {
+					height: 100%;
+
+					.header {
+						h2 {
+							position: absolute;
+							font-size: 1.6rem;
+							padding: 0;
+							top: 10px;
+							left: 30px;
+						}
+
+						.close {
+							position: absolute;
+							font-size: 40px;
+							cursor: pointer;
+							top: 20px;
+							right: 20px;
+							z-index: 9999;
+						}
+					}
+
+					.footer {
+						#dlg-confirm {
+							position: absolute;
+							bottom: 30px;
+							right: 110px;
+							z-index: 9999;
+						}
+
+						#dlg-cancel {
+							position: absolute;
+							bottom: 30px;
+							right: 30px;
+							z-index: 9999;
+						}
+					}
+
+					.body {
+						display: flex;
+						flex-direction: column;
+						box-sizing: border-box;
+						height: 100%;
+						padding: 80px 30px 30px;
+
+						nav {
+							height: 35px;
+
+							a {
+								text-decoration: none;
+								background: #eee;
+								user-select: none;
+							}
+
+							a:focus {
+								box-shadow: none;
+							}
+
+							a.nav-tab-active {
+								background: #fefefe;
+								border-bottom: 1px solid #fdfdfd;
+							}
+						}
+
+						.tab-content {
+							flex: 1;
+							overflow-x: hidden;
+							overflow-y: auto;
+							display: none;
+						}
+
+						#bt-results {
+							margin-top: 15px;
+							width: 100%;
+
+							th {
+								text-align: left;
+							}
+
+							.p-minus,
+							.p-plus {
+								width: 28px;
+								user-select: none;
+							}
+
+							.p-prev,
+							.p-next {
+								color: var(--primary-brand-colour);
+								font-size: 24px;
+								cursor: pointer;
+							}
+
+							.off {
+								color: #cfd1d4;
+								font-size: 24px;
+							}
+
+							.num {
+								max-width: 50px;
+							}
+
+							tr.product:hover {
+								background: #eeefee;
+							}
+
+							td.ctrls {
+								text-align: right;
+							}
+						}
+					}
+				}
+			}
+			dialog#bt-view::backdrop {
+				background: rgba(0, 0, 0, 0.7);
+				backdrop-filter: blur(3px);
+			}
+			#bt-popup {
+				padding: 10px;
+				background: white;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				max-width: 300px;
+				min-width: 100px;
+				box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+				z-index: 99999;
+			}
+			.loader {
+				width: 48px;
+				height: 6px;
+				display: block;
+				margin: auto;
+				position: relative;
+				border-radius: 4px;
+				color: var(--primary-brand-colour);
+				box-sizing: border-box;
+				animation: anim 0.6s linear infinite;
+			}
+			@keyframes anim {
+				0% { box-shadow: -10px 20px, 10px 35px , 0px 50px; }
+				25% { box-shadow: 0px 20px ,  0px 35px, 10px 50px; }
+				50% { box-shadow: 10px 20px, -10px 35px, 0px 50px; }
+				75% { box-shadow: 0px 20px, 0px  35px, -10px 50px; }
+				100% { box-shadow: -10px 20px, 10px  35px, 0px 50px; }
+			}
 		</style>
 <?php
 	}
@@ -1309,10 +1637,6 @@ class BT {
 	public static function gen_js() {
 ?>
 		<script>
-			window.BT = {
-				sub: <?php echo (get_option('uploads_use_yearmonth_folders')) ? 1 : 0; ?>
-			};
-
 			function gallery(e) {
 				this.field = e;
 				this.get = function() {
@@ -1379,8 +1703,163 @@ class BT {
 				};
 			}
 
+			function multi(e, t) {
+				this.field = e;
+				this.type = t;
+				this.get = function() {
+					var a = $('#' + this.field).val().split(',');
+					return a.filter((val) => val !== '');
+				};
+				this.set = function(items) {
+					$('#' + this.field).val(items.join());
+				};
+				this.del = function(index) {
+					var items = this.get();
+					items.splice(index, 1);
+					this.set(items);
+					this.gen();
+				};
+				this.add = function(item) {
+					var items = this.get();
+					items.push(item);
+					this.set(items);
+					this.gen();
+				};
+				this.minus = function(item) {
+
+				};
+				this.plus = function(item) {
+
+				};
+				this.dlg = function() {
+					var type = this.type;
+					$('#bt-view .header h2').html('Add a <span class="caps">' + type + '</span>');
+					window.BT.dlg('open', 'bt-view');
+					var s = $('#bt-view #tab-search');
+					s.empty();
+					s.append('<br><input type="text" id="bt-search-term" value="">');
+					s.append('&nbsp;<span class="button button-primary" id="bt-search-go"><i class="fa-solid fa-magnifying-glass"></i></span>');
+					s.append('<table id="bt-results"></table>');
+					var m = this;
+					$(document).on('click', '#bt-search-go', function(e) {
+						m.fetch($('#bt-view #bt-search-term').val(), 1, 15);
+					});
+					$(document).on('keypress', '#bt-search-term', function(e) {
+						if (e.which === 13) {
+							e.preventDefault();
+							m.fetch($('#bt-view #bt-search-term').val(), 1, 15);
+						}
+					});
+					$('#bt-view #bt-search-term').focus();
+				};
+				this.fetch = function(search, page, per) {
+					var t = $('#bt-view #bt-results');
+					window.BT.ref = {
+						t: this,
+						s: search,
+						p: page,
+						per: per
+					};
+					t.empty();
+					t.append('<tr><td colspan="5"><span class="loader"></span></td></tr>');
+					window.BT.get({
+						type: this.type,
+						search: search,
+						page: page,
+						per: per
+					}, function(r) {
+						t.empty();
+						t.append('<tr><th>Product</th><th>Category</th><th>Supplier</th><th></th></tr>');
+						if (r.hasOwnProperty('results')) {
+							if (r.results.length > 0) {
+								$.each(r.results, function(i, v) {
+									t.append('<tr class="product"><td>' + v.title + '</td><td>' + v.terms.product_category.join(', ') + '</td><td>' + v.terms.supplier.join(', ') + '</td><td class="ctrls"><span class="button button-primary p-minus" data-id="' + v.id + '">-</span> <input class="num" type="text" id="n-' + v.id + '" value="0"> <span class="button button-primary p-plus" data-id="' + v.id + '">+</span></td></td>');
+								});
+								t.append('<tr><td colspan="4"><br><strong>Found ' + r.total + ' result' + ((r.total > 1) ? 's' : '') + ' - Page ' + r.page + ' of ' + r.pages + '</strong></td></tr>');
+								if (r.pages > 1) {
+									t.append('<tr><td colspan="4">');
+									if (r.page > 1) {
+										t.append('<span class="p-prev" onclick="window.BT.ref.t.fetch(window.BT.ref.s, (window.BT.ref.p - 1), window.BT.ref.per);"><i class="fa-solid fa-circle-chevron-left"></i></span>&nbsp;');
+									}
+									else {
+										t.append('<span class="off"><i class="fa-solid fa-circle-chevron-left"></i></span>&nbsp;');
+									}
+									if (r.page < r.pages) {
+										t.append('<span class="p-next" onclick="window.BT.ref.t.fetch(window.BT.ref.s, (window.BT.ref.p + 1), window.BT.ref.per);"><i class="fa-solid fa-circle-chevron-right"></i></span>');
+									}
+									else {
+										t.append('<span class="off"><i class="fa-solid fa-circle-chevron-right"></i></span>');
+									}
+									t.append('</td></tr>');
+								}
+								if (!$('#bt-results').data('l')) {
+									$(document).on('click', '.p-minus', function(e) {
+										let id = $(this).data('id');
+										let n = Number($('#n-' + id).val());
+										if (n > 0) {
+											$('#n-' + id).val(n - 1);
+										}
+									});
+									$(document).on('click', '.p-plus', function(e) {
+										let id = $(this).data('id');
+										let n = Number($('#n-' + id).val());
+										$('#n-' + id).val(n + 1);
+									});
+									$('#bt-results').data('l', true);
+								}
+							}
+							else {
+								t.append('<tr><td>No results</td></td>');
+							}
+						}
+						else {
+							t.append('<tr><td>There was an error fetching data</td></td>');
+						}
+					});
+				};
+				this.gen = function() {
+					var field = this.field;
+					var ul = $('#' + field + '_list');
+					ul.empty();
+					var items = this.get();
+					$.each(items, function(i, v) {
+						var text = $('#selector_' + field + ' option[value="' + v + '"]').text();
+						ul.append('<li><p>' + text + '</p><span class="del" onclick="window.BT.' + field + '.del(' + i + ')">&times;</span><span class="minus" onclick="window.BT.' + field + '.minus(' + i + ')">-</span><span class="plus" onclick="window.BT.' + field + '.plus(' + i + ')">+</span></li>');
+					});
+				};
+			}
+
 			jQuery(function($) {
+				const plugin = basic_types;
+
+				window.BT = {
+					sub: <?php echo (get_option('uploads_use_yearmonth_folders')) ? 1 : 0; ?>,
+					dlg: function(action, id) {
+						let d = document.getElementById(id);
+						if (action == 'open') {
+							d.showModal();
+						}
+						else {
+							d.close();
+						}
+					},
+					get: function(args, f) {
+						$.ajax({
+							method: 'GET',
+							url: plugin.api.url,
+							beforeSend: function(xhr) {
+								xhr.setRequestHeader('X-WP-Nonce', plugin.api.nonce);
+							},
+							data: args
+						})
+						.then(function(r) {
+							f(r);
+						});
+					}
+				};
+
 				var mediaUploader, bid;
+
 				$('.choose-file-button').on('click', function(e) {
 					bid = $(this).data('id');
 					e.preventDefault();
@@ -1412,6 +1891,9 @@ class BT {
 					});
 					mediaUploader.open();
 				});
+
+				$('#submitdiv h2').text('Actions');
+				$('#publishing-action #publish').val('Save');
 			});
 		</script>
 <?php
@@ -1420,6 +1902,8 @@ class BT {
 	public static function gen_fields($what, $type, $field, $fval, $keys) {
 		$fid = self::$def['prefix'] . '_' . $type . '_' . $field;
 		$fname = self::prefix($type) . $field;
+
+		$post_id = $_GET['post'] ?? null;
 
 		$override = apply_filters(self::$def['prefix'] . '_add_post_fields', false, $what, $type, $field, $fval, $keys);
 
@@ -1545,12 +2029,74 @@ class BT {
 						break;
 					}
 					case 'multi': {
-						// this is a gallery of linked types
-						echo 'wip';
+						// this is a multi linked record field using
+						// checkboxes to create a comma separated array
+?>
+						<div class="field-title">
+							<label><?php echo $keys['label']; ?>:</label>
+							<span class="desc"><?php echo $keys['description']; ?></span>
+						</div>
+						<div class="field-edit">
+<?php
+						if (!is_array($fval)) {
+							$fval = ($fval !== '') ? explode(',', $fval) : [];
+						}
 
+						if ($keys['linked'] == 'user') {
+							$roles = (strpos($keys['role'], ',') !== false) ? explode(',', $keys['role']) : [$keys['role']];
+							$role = (isset($keys['role'])) ? ['role__in' => $roles] : null;
+							$users = get_users($role);
+
+							if (count($users)) {
+								foreach ($users as $user) {
+									$id = $user->ID;
+									$checked = in_array($id, $fval) ? ' checked' : '';
+									echo '<label><input type="checkbox" class="bt-cb" name="' . self::$def['prefix'] . '-' . $keys['linked'] . '[]" value="' . $id . '"' . $checked . '> ' . $user->display_name . '</label>';
+									echo (!empty($keys['row'])) ? '' : '<br>';
+								}
+							}
+						}
+						else {
+							$loop = get_posts([
+								'post_type' => $keys['linked'],
+								'post_status' => 'publish',
+								'posts_per_page' => -1,
+								'orderby' => 'title',
+								'order' => 'ASC'
+							]);
+
+							if (count($loop) > 0) {
+								foreach ($loop as $post) {
+									$id = $post->ID;
+									$checked = in_array($id, $fval) ? ' checked' : '';
+									if ($post->post_title != 'Auto Draft') {
+										echo '<label><input type="checkbox" class="bt-cb" name="' . self::$def['prefix'] . '-' . $keys['linked'] . '[]" value="' . $id . '"' . $checked . '> ' . $post->post_title . '</label>';
+										echo (!empty($keys['row'])) ? '' : '<br>';
+									}
+								}
+							}
+						}
+?>
+						</div>
+						<script>
+							var <?php echo $field; ?>_checkboxes = $('input[name="<?php echo self::$def['prefix']; ?>-<?php echo $keys['linked']; ?>[]"]');
+							var <?php echo $field; ?>_input = $('#<?php echo self::$def['prefix']; ?>_<?php echo $type; ?>_<?php echo $field; ?>');
+							<?php echo $field; ?>_checkboxes.on('change', function() {
+								var values = [];
+								<?php echo $field; ?>_checkboxes.each(function() {
+									if ($(this).is(':checked')) {
+										values.push($(this).val());
+									}
+								});
+								<?php echo $field; ?>_input.val(values.join(','));
+							});
+						</script>
+<?php
 						break;
 					}
 					default: {
+						// unsupported or undefined linked 'type'
+
 						echo '-_-';
 					}
 				}
@@ -1627,7 +2173,30 @@ class BT {
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
+						if ($fval == '') {
+							$fval = $keys['default'] ?? $fval;
+						}
 						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+					break;
+				}
+				case 'calc': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						$calc = $keys['calc'] ?? null;
+						$data = ($post_id) ? self::get_all($post_id) : null;
+						if ($data && $calc) {
+							foreach ($data as $f => $v) {
+								$var = '_' . $f;
+								$$var = (float)$v;
+							}
+						}
+						eval('$out =' . $calc . ';');
+						echo '<input type="text" readonly value="' . $out . '" style="width:99%">';
+					break;
 					break;
 				}
 				case 'barcode': {
@@ -1638,12 +2207,24 @@ class BT {
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:49%">';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:25%">';
 						if ($fval != '') {
 							$barcode = new Barcode();
 							$obj = $barcode->getBarcodeObj($keys['version'], $fval, -2, -37, 'black', [0, 0, 0, 0])->setBackgroundColor('white');
+							echo '<div class="barcode" style="">' . $obj->getSvgCode() . '</div>';
+							echo '<a href="' . get_admin_url() . 'admin.php?action=download&type=_barcode&version=' . urlencode($keys['version']) . '&format=svg&value=' . $fval . '" class="button-primary bc-btn"><i class="fa-solid fa-circle-down"></i> &nbsp;SVG</a> &nbsp; ';
+							echo '<a href="' . get_admin_url() . 'admin.php?action=download&type=_barcode&version=' . urlencode($keys['version']) . '&format=png&value=' . $fval . '" class="button-primary bc-btn"><i class="fa-solid fa-circle-down"></i> &nbsp;PNG</a>';
 						}
-						echo '<div style="position:relative;display:inline-block;width:49%;top:19px;left:20px">' . (($fval != '') ? $obj->getSvgCode() : '') . '</div>';
+					break;
+				}
+				case 'id': {
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<input type="text" value="' . $post_id . '" readonly style="width:99%">';
 					break;
 				}
 				case 'number': {
@@ -1692,6 +2273,14 @@ class BT {
 					break;
 				}
 				case 'date': {
+					if ($fval == '' && $keys['default'] != '') {
+						if ($keys['default'] == 'now') {
+							$fval = date('Y-m-d');
+						}
+						else {
+							$fval = $keys['default'];
+						}
+					}
 						echo '<label for="' . $fid . '">';
 							echo $keys['label'] . ':';
 						echo '</label>';
@@ -1863,7 +2452,7 @@ class BT {
 						$posts = get_posts([
 							'post_type' => $linked,
 							'post_status' => 'publish',
-							'posts_per_page' => '-1',
+							'posts_per_page' => -1,
 							'orderby' => 'title',
 							'order' => 'ASC'
 						]);
@@ -1891,8 +2480,8 @@ class BT {
 						echo '</span>';
 						echo '<ul class="bt-list-items" id="' . $fid . '_list"></ul>';
 						echo '<script>';
-							echo 'var l = new list("' . $fid . '"); l.gen(); window.BT.' . $fid . ' = l;';
 							echo 'jQuery(function($) {';
+								echo 'var l = new list("' . $fid . '"); l.gen(); window.BT.' . $fid . ' = l;';
 								echo '$("#selector_' . $fid . '").on("change", function() {';
 									echo 'var i = $(this).val();';
 									echo 'window.BT.' . $fid . '.add(i);';
@@ -1905,6 +2494,29 @@ class BT {
 								echo '});';
 							echo '});';
 						echo '</script>';
+					break;
+				}
+				case 'multi-list': {
+					$html = <<<HTML
+						<label for="{$fid}">
+							{$keys['label']}:
+						</label>
+						<span class="desc">{$keys['description']}</span>
+					</div>
+					<div class="field-edit">
+						<input class="bt-list" type="hidden" id="{$fid}" name="{$fname}" value="{$fval}">
+						<div class="button button-primary choose-item-button plus-button" data-id="{$fid}">+</div>
+						<ul class="bt-list-items" id="{$fid}_list"></ul>
+						<script>
+							jQuery(function($) {
+								var m = new multi('{$fid}', '{$keys['linked_type']}'); m.gen(); window.BT.{$fid} = m;
+								$('.choose-item-button').on('click', function(e) {
+									window.BT.{$fid}.dlg();
+								});
+							});
+						</script>
+HTML;
+					echo $html;
 					break;
 				}
 			}
@@ -1953,6 +2565,8 @@ class BT {
 
 		wp_nonce_field(plugins_url(__FILE__), 'bt_nonce');
 		wp_enqueue_media();
+
+		self::data_api();
 
 		self::gen_css();
 		self::gen_js();
@@ -2036,7 +2650,7 @@ class BT {
 
 		if (isset(self::$posts[$type])) {
 
-			foreach (self::$posts[$type] as $field => $keys) {
+			foreach (self::$posts[$type]['fields'] as $field => $keys) {
 				if (($field == $column_name) && !empty($keys['column'])) {
 					switch ($keys['type']) {
 						case 'check': {
@@ -2060,7 +2674,7 @@ class BT {
 		if (isset(self::$posts[$type])) {
 			unset($columns['date']);
 
-			foreach (self::$posts[$type] as $field => $keys) {
+			foreach (self::$posts[$type]['fields'] as $field => $keys) {
 				if (isset($keys['column']) && $keys['column']) {
 					$columns[$field] = $keys['label'];
 				}
@@ -2085,7 +2699,7 @@ class BT {
 			$orderby = $query->get('orderby');
 			$prefix = self::prefix($type);
 
-			foreach (self::$posts[$type] as $field => $keys) {
+			foreach (self::$posts[$type]['fields'] as $field => $keys) {
 				if (isset($keys['column']) && isset($keys['sort'])) {
 					if ($orderby == $field) {
 						$sort_by = ($keys['sort'] == 'int') ? 'meta_value_num' : 'meta_value';
@@ -2101,7 +2715,7 @@ class BT {
 		$type = $_GET['post_type'] ?? null;
 
 		if ($type && isset(self::$posts[$type])) {
-			foreach (self::$posts[$type] as $field => $keys) {
+			foreach (self::$posts[$type]['fields'] as $field => $keys) {
 				if (isset($keys['column']) && isset($keys['sort'])) {
 					$columns[$field] = $field;
 				}
@@ -2223,6 +2837,29 @@ class BT {
 		}
 	}
 
+	public static function auto_taxonomies() {
+		global $typenow;
+
+		if (!isset(self::$posts[$typenow])) {
+			return;
+		}
+
+		$taxes = get_object_taxonomies($typenow, 'names');
+
+		if (count($taxes) > 0) {
+			echo '<script>jQuery(function($) {';
+
+			foreach ($taxes as $tax) {
+				$id = isset($_GET[$tax]) ? intval($_GET[$tax]) : 0;
+				if ($id) {
+					echo '$("#in-' . $tax . '-' . $id . '-2").prop("checked", true);';
+				}
+			}
+
+			echo '});</script>';
+		}
+	}
+
 
 	//      ███         ▄████████  ▀████    ▐████▀  
 	//  ▀█████████▄    ███    ███    ███▌   ████▀   
@@ -2235,6 +2872,8 @@ class BT {
 
 	public static function edit_taxonomy_fields($term) {
 		global $pagenow;
+
+		self::data_api();
 
 		switch ($pagenow) {
 			case 'edit-tags.php': {
@@ -2282,7 +2921,7 @@ class BT {
 					<div id="side-sortables" class="meta-box-sortables ui-sortable">
 						<div id="submitdiv" class="postbox">
 							<div class="postbox-header">
-								<h2 class="hndle ui-sortable-handle">Publish</h2>
+								<h2 class="hndle ui-sortable-handle">Actions</h2>
 								<div class="handle-actions hide-if-no-js"></div>
 							</div>
 							<div class="inside">
@@ -2298,6 +2937,27 @@ class BT {
 							</div>
 						</div>
 <?php
+			$meta_box = apply_filters(strtolower(__CLASS__) . '_taxonomy_meta_box', []);
+
+			if (count($meta_box) > 0) {
+				foreach ($meta_box as $mb) {
+					$slug = sanitize_title($mb['title']);
+?>
+						<div id="btmetadiv-<?php echo $slug; ?>" class="postbox bt-postbox">
+							<div class="postbox-header">
+								<h2 class="hndle ui-sortable-handle"><?php echo $mb['title']; ?></h2>
+								<div class="handle-actions hide-if-no-js"></div>
+							</div>
+							<div class="inside">
+								<div class="submitbox" id="btmetacontent-<?php echo $slug; ?>">
+									<?php echo $mb['content']; ?>
+								</div>
+							</div>
+						</div>
+<?php
+				}
+			}
+
 			if (count($taxonomies) > 0) {
 				foreach ($taxonomies as $category) {
 					$label = self::label($category);
@@ -2627,8 +3287,6 @@ class BT {
 		<br>
 		<div id="poststuff">
 			<div id="post-body" class="metabox-holder columns-2">
-
-
 				<div id="postbox-container-1" class="postbox-container">
 					<div id="side-sortables" class="meta-box-sortables ui-sortable">
 						<div id="submitdiv" class="postbox">
@@ -2703,6 +3361,8 @@ class BT {
 <?php
 		wp_nonce_field(plugins_url(__FILE__), 'bt_nonce');
 		wp_enqueue_media();
+
+		self::data_api();
 
 		self::gen_css();
 		self::gen_js();
@@ -3457,6 +4117,7 @@ class BT {
 <?php
 	}
 
+
 	//     ▄████████     ▄████████     ▄████████     ▄████████   ▄████████     ▄█    █▄     
 	//    ███    ███    ███    ███    ███    ███    ███    ███  ███    ███    ███    ███    
 	//    ███    █▀     ███    █▀     ███    ███    ███    ███  ███    █▀     ███    ███    
@@ -3489,16 +4150,16 @@ class BT {
 	}
 
 	public static function posts_search_join($join) {
-	    global $wpdb;
+		global $wpdb;
 
-	    return $join . " LEFT JOIN {$wpdb->postmeta} AS pm ON pm.post_id = {$wpdb->posts}.ID ";
+		return $join . " LEFT JOIN {$wpdb->postmeta} AS pm ON pm.post_id = {$wpdb->posts}.ID ";
 	}
 
 	public static function posts_search_where($where) {
-	    global $wpdb;
+		global $wpdb;
 
-	    if (!isset($_GET['s']) || empty($_GET['s'])) {
-	        return $where;
+		if (!isset($_GET['s']) || empty($_GET['s'])) {
+			return $where;
 		}
 
 		$search = esc_sql($wpdb->esc_like(sanitize_text_field($_GET['s'])));
@@ -3647,13 +4308,13 @@ class BT {
 }
 
 
-//  ▀█████████▄    ▄██████▄    ▄██████▄       ███      
-//    ███    ███  ███    ███  ███    ███  ▀█████████▄  
-//    ███    ███  ███    ███  ███    ███     ▀███▀▀██  
-//   ▄███▄▄▄██▀   ███    ███  ███    ███      ███   ▀  
+//  ▀█████████▄    ▄██████▄    ▄██████▄       ███
+//    ███    ███  ███    ███  ███    ███  ▀█████████▄
+//    ███    ███  ███    ███  ███    ███     ▀███▀▀██
+//   ▄███▄▄▄██▀   ███    ███  ███    ███      ███   ▀
 //  ▀▀███▀▀▀██▄   ███    ███  ███    ███      ███      
-//    ███    ██▄  ███    ███  ███    ███      ███      
-//    ███    ███  ███    ███  ███    ███      ███      
+//    ███    ██▄  ███    ███  ███    ███      ███
+//    ███    ███  ███    ███  ███    ███      ███  
 //  ▄█████████▀    ▀██████▀    ▀██████▀      ▄████▀
 
 add_action('init', 'BT::init');

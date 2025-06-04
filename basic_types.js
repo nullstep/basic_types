@@ -225,10 +225,10 @@ jQuery(function($) {
 		});
 		mediaUploader.open();
 	});
-	// $('.choose-colour-button').on('change', function() {
-	// 	bid = '#' + $(this).data('id');
-	// 	$(bid).val($(this).val());
-	// });
+	$('.choose-colour-button').on('change', function() {
+		bid = '#' + $(this).data('id');
+		$(bid).val($(this).val());
+	});
 });
 
 // eof

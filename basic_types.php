@@ -773,7 +773,7 @@ class BT {
 
 		$name = self::$def['plugin'];
 		$form = self::$def['admin'];
-		$title = ucwords((_BT['bt_title'] != '') ? _BT['bt_title'] : self::$def['title']);
+		$title = (_BT['bt_title'] != '') ? ucwords(_BT['bt_title']) : self::$def['plugin'];
 
 		$dev_tabs = [
 			'posts',

@@ -15,4 +15,10 @@ a WP plugin for custom roles, taxonomies and posts by creating admin pages and a
 - bt_dialog_tabs
 - bt_dialog_content
 
+## api
+
+/wp-json/basic_types-api/v1/data/
+
+- get_records
+
 // eof

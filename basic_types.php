@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.1.1
+ * Version: 2.1.2
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -62,6 +62,10 @@ class BT {
 				'type' => 'string',
 				'default' => 'no'
 			],
+			'bt_data_api' => [
+				'type' => 'string',
+				'default' => 'permissions_admin'
+			],
 			'bt_fa' => [
 				'type' => 'string',
 				'default' => 'no'
@@ -112,6 +116,14 @@ class BT {
 					'bt_hide_admin' => [
 						'label' => 'Hide "administrator" user accounts',
 						'type' => 'check'
+					],
+					'bt_data_api' => [
+						'label' => 'Permissions for API',
+						'type' => 'select',
+						'values' => [
+							'permissions_admin' => 'Admin Only',
+							'permissions_open' => 'Open'
+						]
 					],
 					'bt_transfer' => [
 						'label' => 'Enable Imports/Exports',
@@ -176,6 +188,12 @@ class BT {
 			]
 		];
 
+		// get stored settings
+
+		define('_BT', self::get_settings());
+
+		// define api routes
+
 		self::$def['api'] = [
 			[
 				'methods' => 'POST',
@@ -195,14 +213,12 @@ class BT {
 				'methods' => 'GET',
 				'callback' => 'get_records',
 				'args' => [],
-				'permission_callback' => 'permissions_admin',
+				'permission_callback' => _BT['bt_data_api'],
 				'path' => 'data'
 			]
 		];
 
 		// setup settings etc.
-
-		define('_BT', self::get_settings());
 
 		if (_BT['bt_active'] == 'yes') {
 			if (_BT['bt_files'] == 'yes') {
@@ -450,19 +466,22 @@ class BT {
 		$page = (int)$request->get_param('page');
 		$per = (int)$request->get_param('per');
 		$taxes = (function_exists('bt_fetch_taxes')) ? bt_fetch_taxes($type) : [];
+		$status = $request->get_param('status') ?? 'publish';
 		$search = '%' . $wpdb->esc_like($request->get_param('search')) . '%';
 		$offset = ($page - 1) * $per;
 
-		$query_ids = "SELECT DISTINCT p.ID FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE p.post_type = %s AND p.post_status = 'publish' AND (p.post_title LIKE %s OR pm.meta_value LIKE %s) LIMIT %d OFFSET %d";
+		$status = ($status == 'any') ? '%' : $status;
+
+		$query_ids = "SELECT DISTINCT p.ID FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE p.post_type = %s AND p.post_status LIKE %s AND (p.post_title LIKE %s OR pm.meta_value LIKE %s) LIMIT %d OFFSET %d";
 
 		$post_ids = $wpdb->get_col(
-			$wpdb->prepare($query_ids, $type, $search, $search, $per, $offset)
+			$wpdb->prepare($query_ids, $type, $status, $search, $search, $per, $offset)
 		);
 
-		$query_count = "SELECT COUNT(DISTINCT p.ID) FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE p.post_type = %s AND p.post_status = 'publish' AND (p.post_title LIKE %s OR pm.meta_value LIKE %s)";
+		$query_count = "SELECT COUNT(DISTINCT p.ID) FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE p.post_type = %s AND p.post_status LIKE %s AND (p.post_title LIKE %s OR pm.meta_value LIKE %s)";
 
 		$total_count = $wpdb->get_var(
-			$wpdb->prepare($query_count, $type, $search, $search)
+			$wpdb->prepare($query_count, $type, $status, $search, $search)
 		);
 
 		$results = [];
@@ -773,7 +792,7 @@ class BT {
 
 		$name = self::$def['plugin'];
 		$form = self::$def['admin'];
-		$title = (_BT['bt_title'] != '') ? ucwords(_BT['bt_title']) : self::$def['plugin'];
+		$title = ucwords((_BT['bt_title'] != '') ? _BT['bt_title'] : self::$def['title']);
 
 		$dev_tabs = [
 			'posts',
@@ -1349,6 +1368,21 @@ HTML;
 				.button-primary:hover {
 					box-shadow: 0 0 100px 100px rgba(255,255,255,.3) inset;
 				}
+				.barcode {
+					width: 20%;
+					display: inline-block;
+					margin: 0 15px;
+
+					svg {
+						position: relative;
+						width: 100%;
+						top: 17px;
+					}
+				}
+				.bc-btn {
+					position: relative;
+					top: 5px;
+				}
 				.bt-gallery-images li {
 					position: relative;
 					display: inline-block;
@@ -1415,6 +1449,7 @@ HTML;
 					}
 				}
 			}
+			#application-passwords-section,
 			p.search-box,
 			.term-name-wrap,
 			.term-slug-wrap,
@@ -1423,7 +1458,9 @@ HTML;
 			p.submit,
 			table.form-table,
 			.edit-tag-actions {
-				display: none;
+				display: none !important;
+				opacity: 0;
+				visibility: hidden;
 			}
 			#post-body #side-sortables {
 				min-height: unset;
@@ -2194,7 +2231,7 @@ HTML;
 								$$var = (float)$v;
 							}
 						}
-						eval('$out =' . $calc . ';');
+						@eval('$out =' . $calc . ';');
 						echo '<input type="text" readonly value="' . $out . '" style="width:99%">';
 					break;
 					break;
@@ -2211,7 +2248,7 @@ HTML;
 						if ($fval != '') {
 							$barcode = new Barcode();
 							$obj = $barcode->getBarcodeObj($keys['version'], $fval, -2, -37, 'black', [0, 0, 0, 0])->setBackgroundColor('white');
-							echo '<div class="barcode" style="">' . $obj->getSvgCode() . '</div>';
+							echo '<div class="barcode">' . $obj->getSvgCode() . '</div>';
 							echo '<a href="' . get_admin_url() . 'admin.php?action=download&type=_barcode&version=' . urlencode($keys['version']) . '&format=svg&value=' . $fval . '" class="button-primary bc-btn"><i class="fa-solid fa-circle-down"></i> &nbsp;SVG</a> &nbsp; ';
 							echo '<a href="' . get_admin_url() . 'admin.php?action=download&type=_barcode&version=' . urlencode($keys['version']) . '&format=png&value=' . $fval . '" class="button-primary bc-btn"><i class="fa-solid fa-circle-down"></i> &nbsp;PNG</a>';
 						}
@@ -2779,14 +2816,18 @@ HTML;
 	// add filters to post list page
 
 	public static function add_post_filters() {
-		global $typenow, $wpdb;
+		$type = $_GET['post_type'] ?? null;
 
-		if (!isset(self::$posts[$typenow])) {
+		if (!$type) {
+			return;
+		}
+
+		if (!isset(self::$posts[$type])) {
 			// not one of ours
 			return;
 		}
 
-		$taxes = get_object_taxonomies($typenow);
+		$taxes = get_object_taxonomies($type);
 
 		foreach ($taxes as $tax) {
 			$terms = get_terms($tax);
@@ -2808,6 +2849,68 @@ HTML;
 				echo '</select>';
 			}
 		}
+
+		// add our ajax search box
+
+		self::data_api();
+		$admin_url = get_admin_url();
+
+		$html = <<<HTML
+			<input id="bt-search" type="search" value="" autocomplete="off" placeholder="Type 3 characters or more to search..." style="margin-left:50px;width:260px">
+			<script>
+				jQuery(function($) {
+					const plugin = basic_types;
+
+					console.log(plugin.api.url);
+
+					const s = $('#bt-search');
+					const o = $('#the-list').clone(true, true);
+					s.appendTo(s.parent());
+					s.on('keyup', function(e) {
+						const t = $('#the-list');
+						if (s.val().length > 2) {
+							$.ajax({
+								method: 'GET',
+								url: plugin.api.url,
+								beforeSend: function(xhr) {
+									xhr.setRequestHeader('X-WP-Nonce', plugin.api.nonce);
+								},
+								data: {
+									type: '{$type}',
+									search: s.val(),
+									page: 1,
+									per: 50,
+									status: 'any'
+								}
+							})
+							.then(function(r) {
+								let tr = $('#the-list tr:first').clone();
+								tr.find('th, td').text('');
+								t.empty();
+								if (r.total == 0) {
+									var nr = tr.clone();
+									nr.attr('id', 'no-posts');
+									nr.find('.title').html('<strong>Nothing found</strong>');
+									t.append(nr);
+								}
+								else {
+									r.results.forEach(function(result) {
+										var nr = tr.clone();
+										nr.attr('id', 'post-' + result.id);
+										nr.find('.title').html('<strong><a class="row-title" href="{$admin_url}post.php?post=' + result.id + '&amp;action=edit" aria-label="“' + result.title + '” (Edit)">' + result.title + '</a></strong>');
+										t.append(nr);
+									});
+								}
+							});
+						}
+						else {
+							t.replaceWith(o.clone(true, true));
+						}
+					});
+				});
+			</script>
+HTML;
+		echo $html;
 	}
 
 	// apply filters to post list page
@@ -2821,7 +2924,7 @@ HTML;
 
 		$type = $_GET['post_type'] ?? null;
 
-		if (!isset(self::$posts[$typenow])) {
+		if (!isset(self::$posts[$type])) {
 			// not one of ours
 			return;
 		}
@@ -3892,6 +3995,48 @@ HTML;
 		]);
 	}
 
+	// empty a taxonomy of all relationships and terms
+
+	/*
+
+	DELETE tr
+	FROM wp_term_relationships tr
+	JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
+	WHERE tt.taxonomy = 'customer';
+
+	DELETE FROM wp_term_taxonomy
+	WHERE taxonomy = 'customer';
+
+	DELETE t
+	FROM wp_terms t
+	LEFT JOIN wp_term_taxonomy tt ON t.term_id = tt.term_id
+	WHERE tt.term_id IS NULL;
+
+	*/
+
+	// empty a post type of all posts, meta and relationships
+
+	/*
+
+	DELETE tr
+	FROM wp_term_relationships tr
+	JOIN wp_posts p ON tr.object_id = p.ID
+	WHERE p.post_type = 'movie';
+
+	DELETE pm
+	FROM wp_postmeta pm
+	JOIN wp_posts p ON pm.post_id = p.ID
+	WHERE p.post_type = 'movie';
+
+	DELETE c
+	FROM wp_comments c
+	JOIN wp_posts p ON c.comment_post_ID = p.ID
+	WHERE p.post_type = 'movie';
+
+	DELETE FROM wp_posts
+	WHERE post_type = 'movie';
+
+	*/
 
 	//     ▄████████       ▄█     ▄████████  ▀████    ▐████▀  
 	//    ███    ███      ███    ███    ███    ███▌   ████▀   

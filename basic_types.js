@@ -10,6 +10,7 @@ jQuery(function($) {
 		'bt_icon',
 		'bt_hide_admin',
 		'bt_transfer',
+		'bt_data_api',
 		'bt_fa',
 		'bt_files',
 		'bt_users',

@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.1.2
+ * Version: 2.2.0
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -211,7 +211,7 @@ class BT {
 			],
 			[
 				'methods' => 'GET',
-				'callback' => 'get_records',
+				'callback' => 'get_data',
 				'args' => [],
 				'permission_callback' => _BT['bt_data_api'],
 				'path' => 'data'
@@ -457,9 +457,9 @@ class BT {
 		return $args;
 	}
 
-	// records fetch api
+	// data fetch api
 
-	public static function get_records(?WP_REST_Request $request = null) {
+	public static function get_data(?WP_REST_Request $request = null) {
 		global $wpdb;
 
 		$type = $request->get_param('type');
@@ -525,11 +525,15 @@ class BT {
 		return ($request) ? rest_ensure_response($result) : $result;
 	}
 
+	// RENAME THIS
+
 	public static function data_api() {
 		wp_register_script('bt', '');
 		wp_enqueue_script('bt');
 
-		wp_add_inline_script('bt', 'const ' . self::$def['plugin'] . ' = ' . json_encode(
+		$debounce = 'function debounce(f,w){let t;return function(...a){clearTimeout(t);t=setTimeout(()=>f.apply(this,a),w);};}';
+
+		wp_add_inline_script('bt', $debounce . 'const ' . self::$def['plugin'] . ' = ' . json_encode(
 			['api' => [
 				'url' => esc_url_raw(rest_url(self::$def['plugin'] . '-api/v1/data')),
 				'nonce' => wp_create_nonce('wp_rest')
@@ -1146,6 +1150,28 @@ HTML;
 		echo $html;
 	}
 
+	// helper - get our fields, sans-sections
+
+	public static function get_meta_fields($sections) {
+		$fields = [];
+
+		if (!$sections) {
+			return $fields;
+		}
+
+		if (count($sections)) {
+			foreach ($sections as $section => $data) {
+				if (count($data['fields'])) {
+					foreach ($data['fields'] as $field => $keys) {
+						$fields[$field] = $keys;
+					}
+				}
+			}
+		}
+
+		return $fields;
+	}
+
 
 	//    ▄▄▄▄███▄▄▄▄       ▄████████      ███         ▄████████  
 	//  ▄██▀▀▀███▀▀▀██▄    ███    ███  ▀█████████▄    ███    ███  
@@ -1674,6 +1700,15 @@ HTML;
 	public static function gen_js() {
 ?>
 		<script>
+			var $ = jQuery;
+
+			function ft() {
+				let n = $('#titlewrap input');
+				let l = n.val().length * 2;
+				n.focus();
+				n[0].setSelectionRange(l, l);
+			}
+
 			function gallery(e) {
 				this.field = e;
 				this.get = function() {
@@ -2592,11 +2627,11 @@ HTML;
 		$new_post = ($pagenow == 'post-new.php') ? true : false;
 
 		$prefix = self::prefix($type);
-		$keys = self::$posts[$type]['fields'] ?? [];
+		$fields = self::get_meta_fields(self::$posts[$type]['sections']);
 
-		if (count($keys) > 0) {
-			foreach ($keys as $key => $details) {
-				$field_values[$key] = get_post_meta($post->ID, $prefix . $key, true);
+		if (count($fields) > 0) {
+			foreach ($fields as $field => $details) {
+				$field_values[$field] = get_post_meta($post->ID, $prefix . $field, true);
 			}		
 		}
 
@@ -2609,42 +2644,50 @@ HTML;
 		self::gen_js();
 ?>
 		<script>
-			var $ = jQuery;
+			jQuery(function($) {
+				ft();
+			});
 		</script>
 
 		<div class="inside">
 <?php
-		$count = 1;
+		foreach (self::$posts[$type]['sections'] as $section => $data) {
+			if (isset($data['label']) && $data['label'] != '') {
+				echo '<div class="title"><h3>' . $data['label'] . '</h3></div>';
+			}
 
-		foreach (self::$posts[$type]['fields'] as $field => $keys) {
-			if (!isset($keys['hidden']) || !$keys['hidden']) {
+			$count = 1;
 
-				// set box class
-				switch ($count) {
-					case count(self::$posts[$type]['fields']): {
-						$class = 'bottom';
-						break;
+			foreach ($data['fields'] as $field => $keys) {
+				if (!isset($keys['hidden']) || !$keys['hidden']) {
+
+					// set box class
+					switch ($count) {
+						case count($data['fields']): {
+							$class = 'bottom';
+							break;
+						}
+						case 1: {
+							$class = 'top';
+							break;
+						}
+						default: {
+							$class = 'middle';
+						}
 					}
-					case 1: {
-						$class = 'top';
-						break;
-					}
-					default: {
-						$class = 'middle';
-					}
-				}
 ?>
 			<div class="<?php echo $class; ?>">
 <?php
-				$fval = $field_values[$field] ?? '';
+					$fval = $field_values[$field] ?? '';
 
-				if ($field != '_settings') {
-					self::gen_fields('post', $type, $field, $fval, $keys);
-				}
+					if ($field != '_settings') {
+						self::gen_fields('post', $type, $field, $fval, $keys);
+					}
 ?>
 			</div>
 <?php
-				$count++;
+					$count++;
+				}
 			}
 		}
 ?>
@@ -2660,19 +2703,18 @@ HTML;
 
 		if (array_key_exists($type, self::$posts)) {
 			$prefix = self::prefix($type);
-			$keys = self::$posts[$type]['fields'];
+			$fields = self::get_meta_fields(self::$posts[$type]['sections']);
 
-			if ($keys) {
-				foreach ($keys as $key => $details) {
-
-					if (array_key_exists($prefix . $key, $_POST)) {
+			if (count($fields)) {
+				foreach ($fields as $field => $value) {
+					if (array_key_exists($prefix . $field, $_POST)) {
 						update_post_meta(
 							$post_id,
-							$prefix . $key,
-							$_POST[$prefix . $key]
+							$prefix . $field,
+							$_POST[$prefix . $field]
 						);
 					}
-				}		
+				}
 			}
 
 			do_action(self::$def['prefix'] . '_after_save_post', $post_id, $type, $_POST);
@@ -2686,18 +2728,23 @@ HTML;
 		$prefix = self::prefix($type);
 
 		if (isset(self::$posts[$type])) {
+			$fields = self::get_meta_fields(self::$posts[$type]['sections']);
 
-			foreach (self::$posts[$type]['fields'] as $field => $keys) {
-				if (($field == $column_name) && !empty($keys['column'])) {
+			if (!count($fields)) {
+				return;
+			}
+
+			foreach ($fields as $field => $keys) {
+				if (($field == $column_key) && !empty($keys['column'])) {
 					switch ($keys['type']) {
 						case 'check': {
-							$yes = '<svg fill="#000000" height="18px" width="18px" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 490 490"><polygon points="452.253,28.326 197.831,394.674 29.044,256.875 0,292.469 207.253,461.674 490,54.528 "></polygon></svg>';
-							$no = '<svg fill="#000000"  height="16px" width="16px" version="1.1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M0 14.545L1.455 16 8 9.455 14.545 16 16 14.545 9.455 8 16 1.455 14.545 0 8 6.545 1.455 0 0 1.455 6.545 8z" fill-rule="evenodd"></path></svg>';
-							echo (get_post_meta($id, $prefix . $field, true) == 'yes') ? $yes : $no;
+							$yes = '<svg fill="#000000" height="18px" width="18px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 490 490"><polygon points="452.253,28.326 197.831,394.674 29.044,256.875 0,292.469 207.253,461.674 490,54.528 "></polygon></svg>';
+							$no = '<svg fill="#000000"  height="16px" width="16px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M0 14.545L1.455 16 8 9.455 14.545 16 16 14.545 9.455 8 16 1.455 14.545 0 8 6.545 1.455 0 0 1.455 6.545 8z" fill-rule="evenodd"></path></svg>';
+							echo (get_post_meta($post_id, $prefix . $field, true) == 'yes') ? $yes : $no;
 							break;
 						}
 						default: {
-							echo apply_filters(strtolower(__CLASS__) . '_post_column_data', get_post_meta($id, $prefix . $field, true), $id, $column_name);
+							echo apply_filters(strtolower(__CLASS__) . '_post_column_data', get_post_meta($post_id, $prefix . $field, true), $column_key, $post_id);
 						}
 					}
 				}
@@ -2711,7 +2758,13 @@ HTML;
 		if (isset(self::$posts[$type])) {
 			unset($columns['date']);
 
-			foreach (self::$posts[$type]['fields'] as $field => $keys) {
+			$fields = self::get_meta_fields(self::$posts[$type]['sections']);
+
+			if (!count($fields)) {
+				return;
+			}
+
+			foreach ($fields as $field => $keys) {
 				if (isset($keys['column']) && $keys['column']) {
 					$columns[$field] = $keys['label'];
 				}
@@ -2735,8 +2788,13 @@ HTML;
 		if ($type && isset(self::$posts[$type])) {
 			$orderby = $query->get('orderby');
 			$prefix = self::prefix($type);
+			$fields = self::get_meta_fields(self::$posts[$type]['sections']);
 
-			foreach (self::$posts[$type]['fields'] as $field => $keys) {
+			if (!count($fields)) {
+				return;
+			}
+
+			foreach ($fields as $field => $keys) {
 				if (isset($keys['column']) && isset($keys['sort'])) {
 					if ($orderby == $field) {
 						$sort_by = ($keys['sort'] == 'int') ? 'meta_value_num' : 'meta_value';
@@ -2752,7 +2810,13 @@ HTML;
 		$type = $_GET['post_type'] ?? null;
 
 		if ($type && isset(self::$posts[$type])) {
-			foreach (self::$posts[$type]['fields'] as $field => $keys) {
+			$fields = self::get_meta_fields(self::$posts[$type]['sections']);
+
+			if (!count($fields)) {
+				return;
+			}
+
+			foreach ($fields as $field => $keys) {
 				if (isset($keys['column']) && isset($keys['sort'])) {
 					$columns[$field] = $field;
 				}
@@ -2860,13 +2924,10 @@ HTML;
 			<script>
 				jQuery(function($) {
 					const plugin = basic_types;
-
-					console.log(plugin.api.url);
-
 					const s = $('#bt-search');
 					const o = $('#the-list').clone(true, true);
 					s.appendTo(s.parent());
-					s.on('keyup', function(e) {
+					const h = debounce(function(e) {
 						const t = $('#the-list');
 						if (s.val().length > 2) {
 							$.ajax({
@@ -2906,7 +2967,8 @@ HTML;
 						else {
 							t.replaceWith(o.clone(true, true));
 						}
-					});
+					}, 300);
+					s.on('keyup', h);
 				});
 			</script>
 HTML;
@@ -3107,11 +3169,11 @@ HTML;
 
 				<div id="postbox-container-2" class="postbox-container">
 					<div id="normal-sortables" class="meta-box-sortables ui-sortable empty-container"></div>
-						<div id="advanced-sortables" class="meta-box-sortables ui-sortable">
-							<div id="bt_meta_box" class="postbox">
-								<div class="postbox-header"><h2 class="hndle ui-sortable-handle">Information</h2>
-									<div class="handle-actions hide-if-no-js"></div>
-								</div>
+					<div id="advanced-sortables" class="meta-box-sortables ui-sortable">
+						<div id="bt_meta_box" class="postbox">
+							<div class="postbox-header"><h2 class="hndle ui-sortable-handle">Information</h2>
+								<div class="handle-actions hide-if-no-js"></div>
+							</div>
 <?php
 		}
 
@@ -3129,9 +3191,11 @@ HTML;
 		else {
 			// editing existing term
 
-			if (count($keys) > 0) {
-				foreach ($keys as $key => $details) {
-					$field_values[$key] = get_term_meta($term->term_id, $prefix . $key, true);
+			$fields = self::get_meta_fields(self::$taxes[$taxonomy]['sections']);
+
+			if (count($fields) > 0) {
+				foreach ($fields as $field => $details) {
+					$field_values[$field] = get_term_meta($term->term_id, $prefix . $field, true);
 				}		
 			}
 
@@ -3146,109 +3210,110 @@ HTML;
 			self::gen_css();
 			self::gen_js();
 ?>
-								<script>
-									var $ = jQuery;
-									$(function() {
-										let t = $('#<?php echo $name_element; ?>').detach();
-										$('#titlewrap').append(t);
+							<script>
+								$(function() {
+									let t = $('#<?php echo $name_element; ?>').detach();
+									$('#titlewrap').append(t);
 
-										let s = $('#<?php echo $slug_element; ?>').detach();
-										s.css({'width':'99%'});
-										$('#meta-slug').append(s);
+									let s = $('#<?php echo $slug_element; ?>').detach();
+									s.css({'width':'99%'});
+									$('#meta-slug').append(s);
 
-										let p = $('#parent').detach();
-										p.css({'width':'99%'});
-										$('#meta-parent').append(p);
+									let p = $('#parent').detach();
+									p.css({'width':'99%'});
+									$('#meta-parent').append(p);
 
-										let d = $('#<?php echo $desc_element; ?>').detach();
-										d.addClass('large-text');
-										$('#meta-description').append(d);
+									let d = $('#<?php echo $desc_element; ?>').detach();
+									d.addClass('large-text');
+									$('#meta-description').append(d);
 
-										$('#tag-name').focus();
-									});
-								</script>
-								<div class="inside">
+									ft();
+
+									let w = $('.wp-own');
+									if (w.length == 1) {
+										w.removeClass('top middle').addClass('bottom');
+									}
+								});
+							</script>
+							<div class="inside">
 <?php
 			$count = 0;
-			$only_ours = true;
 
 			if ($show_slug) {
 				$count++;
-				$only_ours = false;
 ?>
-									<div class="top">
-										<div class="field-title">
-											<label>Slug:</label>
-											<span class="desc">URL-friendly version of the title</span>
-										</div>
-										<div class="field-edit" id="meta-slug"></div>
+								<div class="top">
+									<div class="field-title">
+										<label>Slug:</label>
+										<span class="desc">URL-friendly version of the title</span>
 									</div>
+									<div class="field-edit" id="meta-slug"></div>
+								</div>
 <?php
 			}
 
 			if ($hierarchical) {
 				$count++;
-				$only_ours = false;
 				$class = ($count == 1) ? 'top' : 'middle';
 ?>
-									<div class="<?php echo $class; ?>">
-										<div class="field-title">
-											<label>Parent <?php echo $label; ?>:</label>
-											<span class="desc">Assign a parent to create a hierarchy</span>
-										</div>
-										<div class="field-edit" id="meta-parent"></div>
+								<div class="<?php echo $class; ?>">
+									<div class="field-title">
+										<label>Parent <?php echo $label; ?>:</label>
+										<span class="desc">Assign a parent to create a hierarchy</span>
 									</div>
+									<div class="field-edit" id="meta-parent"></div>
+								</div>
 <?php
 			}
 
 			if ($show_description) {
 				$count++;
-				$only_ours = false;
 				$class = ($count == 1) ? 'top' : 'middle';
 ?>
-									<div class="<?php echo $class; ?>">
-										<div class="field-title">
-											<label>Description:</label>
-											<span class="desc">A description of this category</span>
-										</div>
-										<div class="field-edit" id="meta-description"></div>
+								<div class="<?php echo $class; ?>">
+									<div class="field-title">
+										<label>Description:</label>
+										<span class="desc">A description of this category</span>
 									</div>
+									<div class="field-edit" id="meta-description"></div>
+								</div>
 <?php
 			}
 
-			if ($only_ours) {
-				$count++;
-			}
-
-			$total = $count + count(self::$taxes[$taxonomy]['fields']);
-
-			foreach (self::$taxes[$taxonomy]['fields'] as $field => $keys) {
-
-				$count++;
-
-				// set box class
-				switch ($count) {
-					case $total: {
-						$class = 'bottom';
-						break;
-					}
-					case 1: {
-						$class = 'top';
-						break;
-					}
-					default: {
-						$class = 'middle';
-					}
+			foreach(self::$taxes[$taxonomy]['sections'] as $section => $data) {
+				if (isset($data['label']) && $data['label'] != '') {
+					echo '<div class="title"><h3>' . $data['label'] . '</h3></div>';
 				}
+
+				$count = 1;
+
+				foreach ($data['fields'] as $field => $keys) {
+
+					// set box class
+					switch ($count) {
+						case count($data['fields']): {
+							$class = 'bottom';
+							break;
+						}
+						case 1: {
+							$class = 'top';
+							break;
+						}
+						default: {
+							$class = 'middle';
+						}
+					}
 ?>
 								<div class="<?php echo $class; ?>">
 <?php
-				$fval = $field_values[$field] ?? '';
+					$fval = $field_values[$field] ?? '';
 
-				self::gen_fields('taxonomy', $taxonomy, $field, $fval, $keys);
+					self::gen_fields('taxonomy', $taxonomy, $field, $fval, $keys);
 ?>
 								</div>
 <?php
+					$count++;
+				}
 			}
 ?>
 							</div>
@@ -3266,15 +3331,15 @@ HTML;
 
 		if (array_key_exists($type, self::$taxes)) {
 			$prefix = self::prefix($type);
-			$keys = self::$taxes[$type]['fields'];
+			$fields = self::get_meta_fields(self::$taxes[$type]['sections']);
 
-			if ($keys) {
-				foreach ($keys as $key => $details) {
-					if (array_key_exists($prefix . $key, $_POST)) {
+			if (count($fields)) {
+				foreach ($fields as $field => $value) {
+					if (array_key_exists($prefix . $field, $_POST)) {
 						update_term_meta(
 							$term_id,
-							$prefix . $key,
-							$_POST[$prefix . $key]
+							$prefix . $field,
+							$_POST[$prefix . $field]
 						);
 					}
 				}		
@@ -3376,8 +3441,20 @@ HTML;
 
 		if ($action !== 'new') {
 			$role = get_role($user->roles[0]);
-			$keys = (isset(self::$roles['add'][$role->name]) && (isset(self::$roles['add'][$role->name]['fields']))) ? self::$roles['add'][$role->name]['fields'] : [];
 			$prefix = self::prefix($role->name);
+
+			$field_values = [];
+
+			if (isset(self::$roles['add'][$role->name])) {
+				$fields = self::get_meta_fields(self::$roles['add'][$role->name]['sections']);
+
+				if (count($fields) > 0) {
+					foreach ($fields as $field => $details) {
+						$field_values[$field] = get_user_meta($user->ID, $prefix . $field, true);
+					}		
+				}
+			}
+
 			$taxonomies = (isset(self::$roles['add'][$role->name]['taxonomies'])) ? self::$roles['add'][$role->name]['taxonomies'] : [];
 		}
 		else {
@@ -3471,7 +3548,6 @@ HTML;
 		self::gen_js();
 ?>
 								<script>
-									var $ = jQuery;
 									$(function() {
 										let s = $('#user_login').detach();
 										s.css({'width':'99%'});
@@ -3611,43 +3687,43 @@ HTML;
 			// we are editing a user, so a role is defined
 			// therefore we can show the related meta fields
 
-			if (isset(self::$roles['add'][$role->name]) && isset(self::$roles['add'][$role->name]['fields'])) {
+			if (count($field_values) > 0) {
 				// this role has some meta fields
 
-				if (count($keys) > 0) {
-					foreach ($keys as $key => $details) {
-						$field_values[$key] = get_user_meta($user->ID, $prefix . $key, true);
-					}		
-				}
-
-				$count = 1;
-
-				foreach (self::$roles['add'][$role->name]['fields'] as $field => $keys) {
-
-					// set box class
-					switch ($count) {
-						case count(self::$roles['add'][$role->name]['fields']): {
-							$class = 'bottom';
-							break;
-						}
-						case 1: {
-							$class = 'top';
-							break;
-						}
-						default: {
-							$class = 'middle';
-						}
+				foreach (self::$roles['add'][$role->name]['sections'] as $section => $data) {
+					if (isset($data['label']) && $data['label'] != '') {
+						echo '<div class="title"><h3>' . $data['label'] . '</h3></div>';
 					}
-?>
-								<div class="<?php echo $class; ?>">
-<?php
-					$fval = $field_values[$field] ?? '';
 
-					self::gen_fields('roles', $role->name, $field, $fval, $keys);
+					$count = 1;
+
+					foreach ($data['fields'] as $field => $keys) {
+
+						// set box class
+						switch ($count) {
+							case count($data['fields']): {
+								$class = 'bottom';
+								break;
+							}
+							case 1: {
+								$class = 'top';
+								break;
+							}
+							default: {
+								$class = 'middle';
+							}
+						}
 ?>
-								</div>
+									<div class="<?php echo $class; ?>">
 <?php
-					$count++;
+						$fval = $field_values[$field] ?? '';
+
+						self::gen_fields('roles', $role->name, $field, $fval, $keys);
+?>
+									</div>
+<?php
+						$count++;
+					}
 				}
 			}
 ?>
@@ -3681,17 +3757,19 @@ HTML;
 			$user = get_user_by('id', $user_id);
 			$role = get_role($user->roles[0]);
 
-			if (isset(self::$roles['add'][$role->name]) && isset(self::$roles['add'][$role->name]['fields'])) {
+			if (isset(self::$roles['add'][$role->name]) && isset(self::$roles['add'][$role->name]['sections'])) {
 				$prefix = self::prefix($role->name);
+
+				$fields = self::get_meta_fields(self::$roles['add'][$role->name]['sections']);
 				$keys = self::$roles['add'][$role->name]['fields'];
 
-				if ($keys) {
-					foreach ($keys as $key => $details) {
-						if (array_key_exists($prefix . $key, $_POST)) {
+				if (count($fields)) {
+					foreach ($fields as $field => $value) {
+						if (array_key_exists($prefix . $field, $_POST)) {
 							update_user_meta(
 								$user_id,
-								$prefix . $key,
-								$_POST[$prefix . $key]
+								$prefix . $field,
+								$_POST[$prefix . $field]
 							);
 						}
 					}		
@@ -4366,7 +4444,7 @@ HTML;
 				wp_die('No type requested');
 			}
 
-			list($name, $data) = self::get_data($type);
+			list($name, $data) = self::fetch_data($type);
 
 			if ($name && $data) {
 				header('Content-Type: application/octet-stream');
@@ -4378,7 +4456,7 @@ HTML;
 		}
 	}
 
-	public static function get_data($type) {
+	public static function fetch_data($type) {
 		$result = apply_filters(strtolower(__CLASS__) . '_download_data', false, $type);
 
 		if ($result) {

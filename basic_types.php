@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.2.0
+ * Version: 2.2.1
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -1212,6 +1212,16 @@ HTML;
 						position: relative;
 						top: -4px;
 						left: 5px;
+					}
+				}
+				.title {
+					h3 {
+						font-size: 18px;
+						font-weight: 700;
+						margin: 1.5rem 0 0;
+					    background: rgba(250, 250, 250, 0.8);
+					    padding: 6px;
+						color: #000;
 					}
 				}
 				em, label {
@@ -4431,6 +4441,11 @@ HTML;
 	//  ███▌    ▄  ███    ███    ███    ███  ███   ▄███  
 	//  █████▄▄██   ▀██████▀     ███    █▀   ████████▀
 
+	public static function headers($name) {
+		header('Content-Type: application/octet-stream');
+		header('Content-Disposition: attachment; filename="' . $name . '"');
+	}
+
 	public static function handle_download() {
 		if (isset($_GET['action']) && $_GET['action'] === 'download') {
 
@@ -4444,14 +4459,23 @@ HTML;
 				wp_die('No type requested');
 			}
 
-			list($name, $data) = self::fetch_data($type);
+			if (substr($type, 0, 1) != '_') {
+				list($name, $data) = self::fetch_data($type);
 
-			if ($name && $data) {
-				header('Content-Type: application/octet-stream');
-				header('Content-Disposition: attachment; filename="' . $name . '"');
-
-				echo $data;
-				exit;
+				if ($name && $data) {
+					self::headers($name);
+					echo $data;
+					exit;
+				}
+			}
+			else {
+				switch(substr($type, 1)) {
+					case 'barcode': {
+						$name = 'barcode.svg';
+						self::headers($name);
+						break;
+					}
+				}
 			}
 		}
 	}

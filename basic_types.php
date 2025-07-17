@@ -2733,8 +2733,8 @@ HTML;
 
 	// posts views
 
-	public static function posts_custom_column_views($column_name, $id) {
-		$type = get_post_type($id);
+	public static function posts_custom_column_views($column_key, $post_id) {
+		$type = get_post_type($post_id);
 		$prefix = self::prefix($type);
 
 		if (isset(self::$posts[$type])) {
@@ -2875,7 +2875,10 @@ HTML;
 		if ($referrer) {
 			$parsed_url = parse_url($referrer, PHP_URL_QUERY);
 			$params = [];
-			parse_str($parsed_url, $params);
+
+			if ($parsed_url) {
+				parse_str($parsed_url, $params);
+			}
 
 			if (isset($params['paged'])) {
 				$paged = '&paged=' . $params['paged'];

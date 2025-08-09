@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.2.1
+ * Version: 2.2.2
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -211,7 +211,7 @@ class BT {
 			],
 			[
 				'methods' => 'GET',
-				'callback' => 'get_data',
+				'callback' => 'get_records',
 				'args' => [],
 				'permission_callback' => _BT['bt_data_api'],
 				'path' => 'data'
@@ -253,7 +253,7 @@ class BT {
 		add_action('add_meta_boxes', __CLASS__ . '::add_metaboxes');
 		add_action('edit_form_top', __CLASS__ . '::add_buttons_to_post_edit');
 		add_action('save_post', __CLASS__ . '::save_postdata');
-		add_action('pre_get_posts', __CLASS__ . '::sort_custom_column_query');
+		add_action('pre_get_posts', __CLASS__ . '::sort_post_column_query');
 		add_action('admin_footer', __CLASS__ . '::post_list_buttons');
 		add_action('admin_head', __CLASS__ . '::set_vars');
 		add_action('restrict_manage_posts', __CLASS__ . '::add_post_filters');
@@ -311,8 +311,8 @@ class BT {
 	public static function register_posts() {
 		if (self::check(self::$posts)) {
 			foreach (self::$posts as $type => $data) {
-				add_action('manage_' . $type . '_posts_custom_column', __CLASS__ . '::posts_custom_column_views', 5, 2);
-				add_filter('manage_' . $type . '_posts_columns', __CLASS__ . '::posts_column_views');
+				add_action('manage_' . $type . '_posts_custom_column', __CLASS__ . '::posts_column_views', 5, 2);
+				add_filter('manage_' . $type . '_posts_columns', __CLASS__ . '::posts_columns');
 				add_filter('manage_edit-' . $type . '_sortable_columns', __CLASS__ . '::set_posts_sortable_columns');
 
 				$uc_type = self::label($type, false, true);
@@ -361,8 +361,8 @@ class BT {
 				add_action('edited_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
 				add_action('created_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
 				add_action($tax . '_pre_add_form', __CLASS__ . '::taxonomy_list_buttons');
-				add_filter('manage_edit-' . $tax . '_columns', __CLASS__ . '::taxonomy_custom_columns');
-				add_action('manage_' . $tax . '_custom_column', __CLASS__ . '::taxonomy_custom_column_views', 10, 3);
+				add_filter('manage_edit-' . $tax . '_columns', __CLASS__ . '::taxonomy_columns');
+				add_filter('manage_' . $tax . '_custom_column', __CLASS__ . '::taxonomy_column_views', 10, 3);
 
 				$uc_tax = self::label($tax, false, true);
 				$p_tax = self::label($tax);
@@ -459,7 +459,7 @@ class BT {
 
 	// data fetch api
 
-	public static function get_data(?WP_REST_Request $request = null) {
+	public static function get_records(?WP_REST_Request $request = null) {
 		global $wpdb;
 
 		$type = $request->get_param('type');
@@ -1126,7 +1126,7 @@ class BT {
 						{$content}
 					</div>
 					<div class="footer">
-						<span class="button button-primary" id="dlg-confirm"><i class="fa-solid fa-check"></i> Confirm</span>
+						<span class="button button-primary" id="dlg-confirm" onclick="window.BT[window.BT.cf].done();"><i class="fa-solid fa-check"></i> Confirm</span>
 						<span class="button button-secondary" id="dlg-cancel" onclick="window.BT.dlg('close', 'bt-view');"><i class="fa-solid fa-xmark"></i></i> Cancel</span>
 					</div>
 				</div>
@@ -1462,15 +1462,33 @@ HTML;
 					display: inline-block;
 					vertical-align: top;
 					width: 150px;
+					min-height: 100px;
 					margin: 0 10px 10px 0;
 					padding: 5px 20px 5px 5px;
 					border: 1px solid #8c8f94;
 					border-radius: 4px;
+					background: #fff;
 
-					.del {
+					p {
+						width: calc(100% - 36px);
+						text-transform: capitalize;
+						margin: 0 0 44px 4px;
+						font-size: 16px;
+					}
+
+					i {
 						position: absolute;
-						top: 10px;
-						right: 10px;
+						bottom: 8px;
+						left: 8px;
+						right: 8px;
+						height: 29px;
+						font-size: 24px;
+						font-style: normal;
+						text-align: center;
+					}
+
+					span {
+						position: absolute;
 						width: 20px;
 						height: 20px;
 						text-align: center;
@@ -1479,9 +1497,36 @@ HTML;
 						cursor: pointer;
 						user-select: none;
 						z-index: 999;
-						background: #fff;
-						border: 2px solid #000;
+					}
+
+					span:hover {
+						filter: brightness(150%);
+					}
+
+					.del {
+						top: 8px;
+						right: 8px;
+						background: #ddd;
+						border: 1px solid #bbb;
 						border-radius: 99px;
+					}
+
+					.minus {
+						bottom: 8px;
+						left: 8px;
+						background: var(--primary-brand-colour);
+						border: 1px solid #555;
+						color: #fff;
+						border-radius: 4px;
+					}
+
+					.plus {
+						bottom: 8px;
+						right: 8px;
+						background: var(--primary-brand-colour);
+						border: 1px solid #555;
+						color: #fff;
+						border-radius: 4px;
 					}
 				}
 			}
@@ -1786,27 +1831,41 @@ HTML;
 			}
 
 			function multi(e, t) {
-				this.field = e;
+				this.field = window.BT.cf = e;
 				this.type = t;
 				this.get = function() {
-					var a = $('#' + this.field).val().split(',');
-					return a.filter((val) => val !== '');
+					var a = $('#' + this.field).val();
+					if (a == '') {
+						a = '[]';
+					}
+					return JSON.parse(a);
 				};
 				this.set = function(items) {
-					$('#' + this.field).val(items.join());
+					$('#' + this.field).val(JSON.stringify(items));
 				};
-				this.del = function(index) {
+				this.del = function(item) {
 					var items = this.get();
-					items.splice(index, 1);
-					this.set(items);
+					this.set(items.filter(obj => obj.id !== item));
 					this.gen();
 				};
-				this.add = function(item) {
+				this.add = function(item, title, num) {
 					var items = this.get();
-					items.push(item);
+					items.push({ 'id': item, 'title': title, 'num': num });
 					this.set(items);
-					this.gen();
 				};
+				this.done = function() {
+					var m = this;
+					$('tr.product').each(function(i, v) {
+						let p = $(v).find('.num');
+						let t = $(v).find('.title');
+						let n = Number(p.val());
+						if (n > 0) {
+							m.add(p.data('id'), window.BT.e64(t.text()), n);
+						}
+					});
+					window.BT.dlg('close', 'bt-view');
+ 					this.gen();
+ 				};
 				this.minus = function(item) {
 
 				};
@@ -1855,7 +1914,7 @@ HTML;
 						if (r.hasOwnProperty('results')) {
 							if (r.results.length > 0) {
 								$.each(r.results, function(i, v) {
-									t.append('<tr class="product"><td>' + v.title + '</td><td>' + v.terms.product_category.join(', ') + '</td><td>' + v.terms.supplier.join(', ') + '</td><td class="ctrls"><span class="button button-primary p-minus" data-id="' + v.id + '">-</span> <input class="num" type="text" id="n-' + v.id + '" value="0"> <span class="button button-primary p-plus" data-id="' + v.id + '">+</span></td></td>');
+									t.append('<tr class="product"><td class="title">' + v.title + '</td><td>' + v.terms.product_category.join(', ') + '</td><td>' + v.terms.supplier.join(', ') + '</td><td class="ctrls"><span class="button button-primary p-minus" data-id="' + v.id + '">-</span> <input class="num" type="text" id="n-' + v.id + '" data-id="' + v.id + '" value="0"> <span class="button button-primary p-plus" data-id="' + v.id + '">+</span></td></td>');
 								});
 								t.append('<tr><td colspan="4"><br><strong>Found ' + r.total + ' result' + ((r.total > 1) ? 's' : '') + ' - Page ' + r.page + ' of ' + r.pages + '</strong></td></tr>');
 								if (r.pages > 1) {
@@ -1874,21 +1933,20 @@ HTML;
 									}
 									t.append('</td></tr>');
 								}
-								if (!$('#bt-results').data('l')) {
-									$(document).on('click', '.p-minus', function(e) {
-										let id = $(this).data('id');
-										let n = Number($('#n-' + id).val());
-										if (n > 0) {
-											$('#n-' + id).val(n - 1);
-										}
-									});
-									$(document).on('click', '.p-plus', function(e) {
-										let id = $(this).data('id');
-										let n = Number($('#n-' + id).val());
-										$('#n-' + id).val(n + 1);
-									});
-									$('#bt-results').data('l', true);
-								}
+								$(document).off('click', '.p-minus');
+								$(document).off('click', '.p-plus');
+								$(document).on('click', '.p-minus', function(e) {
+									let id = $(this).data('id');
+									let n = Number($('#n-' + id).val());
+									if (n > 0) {
+										$('#n-' + id).val(n - 1);
+									}
+								});
+								$(document).on('click', '.p-plus', function(e) {
+									let id = $(this).data('id');
+									let n = Number($('#n-' + id).val());
+									$('#n-' + id).val(n + 1);
+								});
 							}
 							else {
 								t.append('<tr><td>No results</td></td>');
@@ -1906,7 +1964,7 @@ HTML;
 					var items = this.get();
 					$.each(items, function(i, v) {
 						var text = $('#selector_' + field + ' option[value="' + v + '"]').text();
-						ul.append('<li><p>' + text + '</p><span class="del" onclick="window.BT.' + field + '.del(' + i + ')">&times;</span><span class="minus" onclick="window.BT.' + field + '.minus(' + i + ')">-</span><span class="plus" onclick="window.BT.' + field + '.plus(' + i + ')">+</span></li>');
+						ul.append('<li><p>' + window.BT.d64(v.title).toLowerCase() + '</p><span class="del" onclick="window.BT.' + field + '.del(' + v.id + ')">&times;</span><span class="minus" onclick="window.BT.' + field + '.minus(' + v.id + ')">-</span><span class="plus" onclick="window.BT.' + field + '.plus(' + v.id + ')">+</span><i>' + v.num + '</i></li>');
 					});
 				};
 			}
@@ -1925,6 +1983,7 @@ HTML;
 							d.close();
 						}
 					},
+					cf: '',
 					get: function(args, f) {
 						$.ajax({
 							method: 'GET',
@@ -1938,6 +1997,13 @@ HTML;
 							f(r);
 						});
 					}
+					,
+					e64: function(str) {
+						return btoa(unescape(encodeURIComponent(str)));
+					},
+					d64: function(str) {
+						return decodeURIComponent(escape(atob(str)));
+ 					}
 				};
 
 				var mediaUploader, bid;
@@ -2278,7 +2344,6 @@ HTML;
 						}
 						@eval('$out =' . $calc . ';');
 						echo '<input type="text" readonly value="' . $out . '" style="width:99%">';
-					break;
 					break;
 				}
 				case 'barcode': {
@@ -2733,7 +2798,7 @@ HTML;
 
 	// posts views
 
-	public static function posts_custom_column_views($column_key, $post_id) {
+	public static function posts_column_views($column_key, $post_id) {
 		$type = get_post_type($post_id);
 		$prefix = self::prefix($type);
 
@@ -2746,15 +2811,21 @@ HTML;
 
 			foreach ($fields as $field => $keys) {
 				if (($field == $column_key) && !empty($keys['column'])) {
+					$meta_value = get_post_meta($post_id, $prefix . $field, true);
+
 					switch ($keys['type']) {
 						case 'check': {
 							$yes = '<svg fill="#000000" height="18px" width="18px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 490 490"><polygon points="452.253,28.326 197.831,394.674 29.044,256.875 0,292.469 207.253,461.674 490,54.528 "></polygon></svg>';
 							$no = '<svg fill="#000000"  height="16px" width="16px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M0 14.545L1.455 16 8 9.455 14.545 16 16 14.545 9.455 8 16 1.455 14.545 0 8 6.545 1.455 0 0 1.455 6.545 8z" fill-rule="evenodd"></path></svg>';
-							echo (get_post_meta($post_id, $prefix . $field, true) == 'yes') ? $yes : $no;
+							echo ($meta_value == 'yes') ? $yes : $no;
 							break;
 						}
 						default: {
-							echo apply_filters(strtolower(__CLASS__) . '_post_column_data', get_post_meta($post_id, $prefix . $field, true), $column_key, $post_id);
+							if (filter_var($meta_value, FILTER_VALIDATE_EMAIL)) {
+								$meta_value = '<a href="mailto:' . $meta_value . '">' . $meta_value . '</a>';
+							}
+
+							echo apply_filters(strtolower(__CLASS__) . '_post_column_data', $meta_value, $column_key, $post_id);
 						}
 					}
 				}
@@ -2762,7 +2833,7 @@ HTML;
 		}
 	}
 
-	public static function posts_column_views($columns) {
+	public static function posts_columns($columns) {
 		$type = $_GET['post_type'];
 
 		if (isset(self::$posts[$type])) {
@@ -2788,7 +2859,7 @@ HTML;
 		return $columns;
 	}
 
-	public static function sort_custom_column_query($query) {
+	public static function sort_post_column_query($query) {
 		if (!is_admin() || !$query->is_main_query()) {
 			return;
 		}
@@ -3379,18 +3450,66 @@ HTML;
 
 	// taxonomy list view columns
 
-	public static function taxonomy_custom_columns($columns) {
-		unset($columns['description']);
-		unset($columns['slug']);
-		unset($columns['posts']);
+	public static function taxonomy_columns($columns) {
+		$type = $_GET['taxonomy'] ?? null;
 
-		$columns = apply_filters(strtolower(__CLASS__) . '_taxonomy_column_title', $columns);
+		if ($type && isset(self::$taxes[$type])) {
+			unset($columns['description']);
+			unset($columns['slug']);
+			unset($columns['posts']);
+
+			$fields = self::get_meta_fields(self::$taxes[$type]['sections']);
+
+			if (!count($fields)) {
+				return;
+			}
+
+			foreach ($fields as $field => $keys) {
+				if (isset($keys['column']) && $keys['column']) {
+					$columns[$field] = $keys['label'];
+				}
+			}
+
+			$columns = apply_filters(strtolower(__CLASS__) . '_taxonomy_column_title', $columns);
+		}
 
 		return $columns;
 	}
 
-	public static function taxonomy_custom_column_views($output, $column_key, $term_id) {
-		$output = apply_filters(strtolower(__CLASS__) . '_taxonomy_column_data', $output, $column_key, $term_id);
+	public static function taxonomy_column_views($output, $column_key, $term_id) {
+		$type = $_GET['taxonomy'] ?? null;
+
+		if ($type && isset(self::$taxes[$type])) {
+			$prefix = self::prefix($type);
+
+			$fields = self::get_meta_fields(self::$taxes[$type]['sections']);
+
+			if (!count($fields)) {
+				return $output;
+			}
+
+			foreach ($fields as $field => $keys) {
+				if (($field == $column_key) && !empty($keys['column'])) {
+					$meta_value = get_term_meta($term_id, $prefix . $field, true);
+
+					switch ($keys['type']) {
+						case 'check': {
+							$yes = '<svg fill="#000000" height="18px" width="18px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 490 490"><polygon points="452.253,28.326 197.831,394.674 29.044,256.875 0,292.469 207.253,461.674 490,54.528 "></polygon></svg>';
+							$no = '<svg fill="#000000"  height="16px" width="16px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M0 14.545L1.455 16 8 9.455 14.545 16 16 14.545 9.455 8 16 1.455 14.545 0 8 6.545 1.455 0 0 1.455 6.545 8z" fill-rule="evenodd"></path></svg>';
+							return ($meta_value == 'yes') ? $yes : $no;
+							break;
+						}
+						default: {
+							if (filter_var($meta_value, FILTER_VALIDATE_EMAIL)) {
+								$meta_value = '<a href="mailto:' . $meta_value . '">' . $meta_value . '</a>';
+							}
+
+							return apply_filters(strtolower(__CLASS__) . '_taxonomy_column_data', $meta_value, $column_key, $post_id);
+						}
+					}
+				}
+			}
+		}
 
 		return $output;
 	}

@@ -6,13 +6,13 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.2.2
+ * Version: 2.2.4
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
 
 define('_PLUGIN', 'basic_types');
-define('_DEVUSER', ['admin', 'nullstep']);
+define('_DEVUSER', ['admin', 'nullstep', 'scott']);
 
 class BT {
 	public static $message = null;
@@ -180,11 +180,6 @@ class BT {
 						'type' => 'code'
 					]
 				]
-			],
-			'misc' => [
-				'label' => 'Misc Functions',
-				'columns' => 6,
-				'buttons' => true
 			]
 		];
 
@@ -796,7 +791,7 @@ class BT {
 
 		$name = self::$def['plugin'];
 		$form = self::$def['admin'];
-		$title = ucwords((_BT['bt_title'] != '') ? _BT['bt_title'] : self::$def['title']);
+		$title = (_BT['bt_title'] != '') ? _BT['bt_title'] : _PLUGIN;
 
 		$dev_tabs = [
 			'posts',
@@ -1439,8 +1434,8 @@ HTML;
 
 					.del {
 						position: absolute;
-						top: 10px;
-						right: 10px;
+						top: -1px;
+						right: -1px;
 						width: 20px;
 						height: 20px;
 						text-align: center;
@@ -1449,9 +1444,10 @@ HTML;
 						cursor: pointer;
 						user-select: none;
 						z-index: 999;
-						background: #fff;
-						border: 2px solid #000;
-						border-radius: 99px;
+						color: #fff;
+						background: #d90000;
+						border: 0;
+						border-radius: 0 4px 0 4px;
 					}
 				}
 				.bt-list-select {
@@ -1504,11 +1500,11 @@ HTML;
 					}
 
 					.del {
-						top: 8px;
-						right: 8px;
-						background: #ddd;
-						border: 1px solid #bbb;
-						border-radius: 99px;
+						top: -1px;
+						right: -1px;
+						background: #d90000;
+						border: 0;
+						border-radius: 0 4px 0 4px;
 					}
 
 					.minus {
@@ -2115,6 +2111,7 @@ HTML;
 				switch ($keys['type']) {
 					case 'select': {
 						// this field needs a select box
+						$field_id = self::$def['prefix'] . '_' . $type . '_' . $field;
 ?>
 				<div class="field-title">
 					<label><?php echo $keys['label']; ?>:</label>
@@ -2122,8 +2119,7 @@ HTML;
 				</div>
 
 				<div class="field-edit">
-
-					<select id="<?php echo self::$def['prefix']; ?>-<?php echo $keys['linked']; ?>" style="width:99%">
+					<select id="<?php echo $field_id; ?>" style="width:99%">
 						<option value="">Select <?php echo ucwords(str_replace('_', ' ', $keys['linked'])); ?>&hellip;</option>
 <?php
 					if ($keys['linked'] == 'user') {
@@ -2167,7 +2163,7 @@ HTML;
 				</div>
 
 				<script>
-					var <?php echo $field; ?>_select = $('#<?php echo self::$def['prefix']; ?>-<?php echo $keys['linked']; ?>');
+					var <?php echo $field; ?>_select = $('#<?php echo $field_id; ?>');
 					var <?php echo $field; ?>_input = $('#<?php echo self::$def['prefix']; ?>_<?php echo $type; ?>_<?php echo $field; ?>');
 					<?php echo $field; ?>_select.on('change', function() {
 						<?php echo $field; ?>_input.val($(this).val());
@@ -2636,7 +2632,7 @@ HTML;
 									echo '$(this).val("0");';
 									echo '$("#select_' . $fid . '").hide();';
 								echo '});';
-								echo '$(".choose-item-button").on("click", function(e) {';
+								echo '$(".choose-item-button[data-id=\'' . $fid . '\']").on("click", function(e) {';
 									echo '$("#select_' . $fid . '").show();';
 								echo '});';
 							echo '});';
@@ -2657,7 +2653,7 @@ HTML;
 						<script>
 							jQuery(function($) {
 								var m = new multi('{$fid}', '{$keys['linked_type']}'); m.gen(); window.BT.{$fid} = m;
-								$('.choose-item-button').on('click', function(e) {
+								$('.choose-item-button[data-id="{$fid}"]').on('click', function(e) {
 									window.BT.{$fid}.dlg();
 								});
 							});
@@ -2825,7 +2821,19 @@ HTML;
 								$meta_value = '<a href="mailto:' . $meta_value . '">' . $meta_value . '</a>';
 							}
 
-							echo apply_filters(strtolower(__CLASS__) . '_post_column_data', $meta_value, $column_key, $post_id);
+							if ($keys['type'] == 'file') {
+								$file = pathinfo($meta_value);
+								if (in_array($file['extension'], ['png', 'jpg', 'jpeg', 'webp'])) {
+									if (file_exists(wp_get_upload_dir()['path'] . '/' . $meta_value)) {
+										$meta_value = '<img src="' . wp_get_upload_dir()['url'] . '/' . $meta_value . '" style="height:32px;width:auto">';
+									}
+								}
+							}
+							else {
+								$meta_value = apply_filters(strtolower(__CLASS__) . '_post_column_data', $meta_value, $column_key, $post_id);
+							}
+
+							echo $meta_value;
 						}
 					}
 				}

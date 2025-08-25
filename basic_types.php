@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.2.4
+ * Version: 2.2.5
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -1400,14 +1400,14 @@ HTML;
 					box-shadow: 0 0 100px 100px rgba(255,255,255,.3) inset;
 				}
 				.barcode {
-					width: 20%;
+					width: 40%;
 					display: inline-block;
 					margin: 0 15px;
 
 					svg {
 						position: relative;
 						width: 100%;
-						top: 17px;
+						top: 20px;
 					}
 				}
 				.bc-btn {
@@ -1561,6 +1561,7 @@ HTML;
 			}
 			#major-publishing-actions {
 				border-top: none;
+				background: transparent;
 			}
 			#your-profile > h2 {
 				display: none;
@@ -2343,20 +2344,24 @@ HTML;
 					break;
 				}
 				case 'barcode': {
-					require_once(get_template_directory() . '/inc/barcode.php');
 						echo '<label for="' . $fid . '">';
 							echo $keys['label'] . ':';
 						echo '</label>';
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
-					echo '<div class="field-edit">';
-						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:25%">';
-						if ($fval != '') {
-							$barcode = new Barcode();
-							$obj = $barcode->getBarcodeObj($keys['version'], $fval, -2, -37, 'black', [0, 0, 0, 0])->setBackgroundColor('white');
-							echo '<div class="barcode">' . $obj->getSvgCode() . '</div>';
-							echo '<a href="' . get_admin_url() . 'admin.php?action=download&type=_barcode&version=' . urlencode($keys['version']) . '&format=svg&value=' . $fval . '" class="button-primary bc-btn"><i class="fa-solid fa-circle-down"></i> &nbsp;SVG</a> &nbsp; ';
-							echo '<a href="' . get_admin_url() . 'admin.php?action=download&type=_barcode&version=' . urlencode($keys['version']) . '&format=png&value=' . $fval . '" class="button-primary bc-btn"><i class="fa-solid fa-circle-down"></i> &nbsp;PNG</a>';
+					if (!is_plugin_active('basic_barcode/basic_barcode.php')) {
+						echo '<div class="field-edit">';
+							echo '<p>Barcode Plugin Not Available</p>';
+					}
+					else {
+						echo '<div class="field-edit">';
+							echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:25%">';
+							if ($fval != '') {
+								$barcode = bcc_get_barcode($keys['version'], $fval, -2, -37, 'black', 'white', [0, 0, 0, 0]);
+								echo '<div class="barcode">' . $barcode->getSvgCode() . '</div>';
+								echo '<a href="' . get_admin_url() . 'admin.php?action=download&type=_barcode&version=' . urlencode($keys['version']) . '&format=svg&value=' . $fval . '" class="button-primary bc-btn"><i class="fa-solid fa-circle-down"></i> &nbsp;SVG</a> &nbsp; ';
+								echo '<a href="' . get_admin_url() . 'admin.php?action=download&type=_barcode&version=' . urlencode($keys['version']) . '&format=png&value=' . $fval . '" class="button-primary bc-btn"><i class="fa-solid fa-circle-down"></i> &nbsp;PNG</a>';
+							}
 						}
 					break;
 				}
@@ -3151,7 +3156,6 @@ HTML;
 		$field_values = [];
 
 		$prefix = self::prefix($taxonomy);
-		$keys = self::$taxes[$taxonomy]['fields'];
 		$label = ucwords(strtolower(str_replace('_', ' ', $taxonomy)));
 
 		$hierarchical = self::$taxes[$taxonomy]['hierarchical'] ?? false;
@@ -3263,7 +3267,7 @@ HTML;
 					<div id="normal-sortables" class="meta-box-sortables ui-sortable empty-container"></div>
 					<div id="advanced-sortables" class="meta-box-sortables ui-sortable">
 						<div id="bt_meta_box" class="postbox">
-							<div class="postbox-header"><h2 class="hndle ui-sortable-handle">Information</h2>
+							<div class="postbox-header"><h2 class="hndle ui-sortable-handle"><?php echo $label; ?> Information</h2>
 								<div class="handle-actions hide-if-no-js"></div>
 							</div>
 <?php
@@ -4601,9 +4605,27 @@ HTML;
 			else {
 				switch(substr($type, 1)) {
 					case 'barcode': {
-						$name = 'barcode.svg';
+						$format = $_GET['format'];
+						$version = $_GET['version'];
+						$value = $_GET['value'];
+
+						$name = 'barcode.' . $format;
+						$output = null;
+
+						$barcode = bcc_get_barcode($version, $value, -2, -37, 'black', 'white,' [0, 0, 0, 0]);
+						switch ($format) {
+							case 'svg': {
+								$output = $barcode->getSvgCode();
+								break;
+							}
+							case 'png': {
+								$output = $barcode->getPngData();
+								break;
+							}
+						}
 						self::headers($name);
-						break;
+						echo $output;
+						die;
 					}
 				}
 			}

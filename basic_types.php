@@ -4612,7 +4612,7 @@ HTML;
 						$name = 'barcode.' . $format;
 						$output = null;
 
-						$barcode = bcc_get_barcode($version, $value, -2, -37, 'black', 'white,' [0, 0, 0, 0]);
+						$barcode = bcc_get_barcode($version, $value, -2, -37, 'black', 'white', [0, 0, 0, 0]);
 						switch ($format) {
 							case 'svg': {
 								$output = $barcode->getSvgCode();

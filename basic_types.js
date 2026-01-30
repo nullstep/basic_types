@@ -15,6 +15,7 @@ jQuery(function($) {
 		'bt_files',
 		'bt_users',
 		'bt_order',
+		'bt_print',
 		'bt_posts',
 		'bt_taxes',
 		'bt_roles'

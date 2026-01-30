@@ -6,7 +6,35 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.2.5
+ * Version: 2.4.1
+*/
+
+/*
+
+helper functions
+
+- get_post_by_title($type, $title)
+- get_posts($type, $order_by = 'title', $status = 'publish')
+- find_posts($type, $meta, $args = [])
+- get_type($function, $id)
+- get($function, $id, $field, $is_json = false)
+- get_all($function, $id, $is_json = false)
+- set($function, $id, $field, $value)
+- update($id, $field, $key, $value = false)
+- delete($id, $field, $key)
+- fields($type, $entity_type)
+- keys($type, $entity_type, $field)
+- make($type, $title, $author_id = null)
+- get_terms($taxonomy)
+- remove_terms_from_posts($taxonomy, $post_type)
+- set_post_terms_by_meta($post_type, $taxonomy, $meta_key)
+- get_posts_of_term($type, $tax, $term, $orderby = 'title', $order = 'ASC')
+- get_posts_sort_by_meta($type, $meta_key, $order = 'ASC')
+- get_posts_of_term_sort_by_meta($type, $tax, $term, $meta_key, $order = 'ASC')
+- get_meta_for_post_ids($key, $id_array)
+- trim($string)
+- nuke($type, $slug)
+
 */
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
@@ -21,6 +49,8 @@ class BT {
 	public static $posts;
 	public static $taxes;
 	public static $roles;
+
+	public static $data_api = false;
 	
 	protected static $slug;
 	protected static $done = false;
@@ -70,6 +100,10 @@ class BT {
 				'type' => 'string',
 				'default' => 'no'
 			],
+			'bt_floating_save' => [
+				'type' => 'string',
+				'default' => 'no'
+			],
 			'bt_files' => [
 				'type' => 'string',
 				'default' => 'no'
@@ -81,6 +115,10 @@ class BT {
 			'bt_order' => [
 				'type' => 'string',
 				'default' => 'pt'
+			],
+			'bt_print' => [
+				'type' => 'string',
+				'default' => 'no'
 			],
 			'bt_posts' => [
 				'type' => 'string',
@@ -133,6 +171,10 @@ class BT {
 						'label' => 'Include Font Awesome in WP Admin',
 						'type' => 'check'
 					],
+					'bt_floating_save' => [
+						'label' => 'Add floating save button',
+						'type' => 'check'
+					],
 					'bt_files' => [
 						'label' => 'Check for JSON files',
 						'type' => 'check'
@@ -148,6 +190,10 @@ class BT {
 							'pt' => 'Posts > Taxonomies',
 							'tp' => 'Taxonomies > Posts'
 						]
+					],
+					'bt_print' => [
+						'label' => 'Include Print Library',
+						'type' => 'check'
 					]
 				]
 			],
@@ -210,6 +256,13 @@ class BT {
 				'args' => [],
 				'permission_callback' => _BT['bt_data_api'],
 				'path' => 'data'
+			],
+			[
+				'methods' => 'GET',
+				'callback' => 'call',
+				'args' => [],
+				'permission_callback' => 'permissions_admin',
+				'path' => 'api'
 			]
 		];
 
@@ -223,7 +276,14 @@ class BT {
 
 				foreach (['posts', 'taxes', 'roles'] as $type) {
 					if (file_exists(__DIR__ . '/' . $type . '.json')) {
-						self::$$type = json_decode(file_get_contents(__DIR__ . '/' . $type . '.json'), true);
+						$json = json_decode(file_get_contents(__DIR__ . '/' . $type . '.json'), true);
+						self::$$type = $json;
+
+						if ($type == 'roles') {
+							// update our roles based on the file
+
+							self::update_roles($json);
+						}
 					}
 					else {
 						self::$$type = json_decode(_BT['bt_' . $type], true);
@@ -243,16 +303,19 @@ class BT {
 
 		// actions and filters
 
-		add_action('admin_footer', __CLASS__ . '::dialog_and_popover');
+		add_action('admin_footer', __CLASS__ . '::admin_footer');
 		add_action('admin_enqueue_scripts', __CLASS__ . '::admin_scripts');
-		add_action('add_meta_boxes', __CLASS__ . '::add_metaboxes');
+		add_action('add_meta_boxes', __CLASS__ . '::add_metaboxes', 10, 2);
 		add_action('edit_form_top', __CLASS__ . '::add_buttons_to_post_edit');
-		add_action('save_post', __CLASS__ . '::save_postdata');
-		add_action('pre_get_posts', __CLASS__ . '::sort_post_column_query');
+		add_action('save_post', __CLASS__ . '::save_post_data');
+		add_action('pre_get_posts', __CLASS__ . '::sort_posts');
+		add_filter('terms_clauses', __CLASS__ . '::sort_terms', 10, 3);
 		add_action('admin_footer', __CLASS__ . '::post_list_buttons');
-		add_action('admin_head', __CLASS__ . '::set_vars');
+		add_action('admin_head', __CLASS__ . '::set_vars_and_styles');
 		add_action('restrict_manage_posts', __CLASS__ . '::add_post_filters');
+		add_action('admin_footer-edit-tags.php', __CLASS__ . '::add_term_filters');
 		add_filter('parse_query', __CLASS__ . '::apply_post_filters');
+		add_action('created_term', __CLASS__ . '::init_term_order_meta', 10, 3);
 
 		add_filter('parent_file', __CLASS__ . '::set_current_menu');
 
@@ -287,6 +350,12 @@ class BT {
 			add_filter('views_users', __CLASS__ . '::modify_user_count');
 		}
 
+		// if (_BT['bt_floating_save'] == 'yes') {
+		// 	add_action('admin_footer-post.php', __CLASS__ . '::post_save_button');
+		// 	add_action('admin_footer-post-new.php', __CLASS__ . '::post_save_button');
+		// 	add_action('admin_footer-edit-tags.php', __CLASS__ . '::term_save_button');
+		// }
+
 		// item updated messages
 
 		add_filter('post_updated_messages', __CLASS__ . '::updated_messages');
@@ -295,10 +364,18 @@ class BT {
 
 		add_action('wp_ajax_' . self::$def['prefix'] . '_ajax', __CLASS__ . '::ajax');
 
+		// add our meta filters
+
+		add_action('pre_get_posts', __CLASS__ . '::posts_meta_filter');
+
 		// register our extended search
 
 		add_action('pre_get_posts', __CLASS__ . '::posts_search');
 		add_filter('terms_clauses', __CLASS__ . '::terms_search', 10, 3);
+
+		// handle any create/update requests
+
+		self::handle_actions();
 
 		// and we're done
 	}
@@ -309,6 +386,7 @@ class BT {
 				add_action('manage_' . $type . '_posts_custom_column', __CLASS__ . '::posts_column_views', 5, 2);
 				add_filter('manage_' . $type . '_posts_columns', __CLASS__ . '::posts_columns');
 				add_filter('manage_edit-' . $type . '_sortable_columns', __CLASS__ . '::set_posts_sortable_columns');
+				add_filter('views_edit-' . $type, __CLASS__ . '::change_post_status_labels');
 
 				$uc_type = self::label($type, false, true);
 				$p_type = self::label($type);
@@ -353,11 +431,12 @@ class BT {
 			foreach (self::$taxes as $tax => $data) {
 				add_action($tax . '_edit_form_fields', __CLASS__ . '::edit_taxonomy_fields', 10, 2);
 				add_action($tax . '_add_form_fields', __CLASS__ . '::edit_taxonomy_fields', 10, 2);
-				add_action('edited_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
-				add_action('created_' . $tax, __CLASS__ . '::save_taxonomy_fields', 10, 3);
+				add_action('edited_' . $tax, __CLASS__ . '::save_taxonomy_data', 10, 3);
+				add_action('created_' . $tax, __CLASS__ . '::save_taxonomy_data', 10, 3);
 				add_action($tax . '_pre_add_form', __CLASS__ . '::taxonomy_list_buttons');
 				add_filter('manage_edit-' . $tax . '_columns', __CLASS__ . '::taxonomy_columns');
 				add_filter('manage_' . $tax . '_custom_column', __CLASS__ . '::taxonomy_column_views', 10, 3);
+				add_filter('term_links-' . $tax, __CLASS__ . '::posts_column_terms', 10, 1);
 
 				$uc_tax = self::label($tax, false, true);
 				$p_tax = self::label($tax);
@@ -381,22 +460,63 @@ class BT {
 				];
 
 				$hierarchical = (isset($data['hierarchical'])) ? $data['hierarchical'] : true;
+				$radio = (isset($data['radio'])) ? $data['radio'] : false;
 
-				register_taxonomy($tax, $data['types'], [
-					'hierarchical' => $hierarchical,
-					'labels' => $labels,
-					'show_ui' => true,
-					'show_in_menu' => false,
-					'show_in_rest' => true,
-					'show_admin_column' => true,
-					'query_var' => true,
-					'rewrite' => ['slug' => $tax],
-				]);
+				if (isset($data['types']) && !empty($data['types'])) {
+					// our taxonomy has some post types to be registered with
 
-				foreach ($data['types'] as $type) {
-					register_taxonomy_for_object_type($tax, $type);
+					register_taxonomy($tax, $data['types'], [
+						'hierarchical' => $hierarchical,
+						'labels' => $labels,
+						'show_ui' => true,
+						'show_in_menu' => false,
+						'show_in_rest' => true,
+						'show_admin_column' => true,
+						'query_var' => true,
+						'rewrite' => ['slug' => $tax],
+						'single_select' => $radio
+					]);
+
+					foreach ($data['types'] as $type) {
+						register_taxonomy_for_object_type($tax, $type);
+					}
 				}
 			}
+		}
+	}
+
+	public static function update_roles($roles) {
+		if (self::check($roles)) {
+			if (isset($roles['remove'])) {
+
+				foreach ($roles['remove'] as $role) {
+					if (get_role($role)) {
+						remove_role($role);
+					}
+				}			
+			}
+
+			if (isset($roles['add'])) {
+				foreach ($roles['add'] as $role => $details) {
+					$capabilities = [];
+
+					foreach ($details['capabilities'] as $cap) {
+						$capabilities[$cap] = true;
+					}
+
+					if (get_role($role)) {
+						remove_role($role);
+					}
+					add_role($role, $details['label'], $capabilities);
+				}			
+			}
+
+			return true;
+		}
+		else {
+			// roles definition issue
+
+			return false;
 		}
 	}
 
@@ -457,83 +577,289 @@ class BT {
 	public static function get_records(?WP_REST_Request $request = null) {
 		global $wpdb;
 
-		$type = $request->get_param('type');
-		$page = (int)$request->get_param('page');
-		$per = (int)$request->get_param('per');
-		$taxes = (function_exists('bt_fetch_taxes')) ? bt_fetch_taxes($type) : [];
-		$status = $request->get_param('status') ?? 'publish';
-		$search = '%' . $wpdb->esc_like($request->get_param('search')) . '%';
-		$offset = ($page - 1) * $per;
+		$ptu = $request->get_param('ptu');
 
-		$status = ($status == 'any') ? '%' : $status;
+		switch ($ptu) {
+			case 'post': {
+				$search_term = $wpdb->esc_like($request->get_param('search'));
+				$type = $request->get_param('type');
+				$search = '%' . $search_term . '%';
+				$status = $request->get_param('status') ?? 'publish';
+				$status = ($status == 'any') ? '%' : $status;
 
-		$query_ids = "SELECT DISTINCT p.ID FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE p.post_type = %s AND p.post_status LIKE %s AND (p.post_title LIKE %s OR pm.meta_value LIKE %s) LIMIT %d OFFSET %d";
+				$post_ids = $wpdb->get_col(
+					$wpdb->prepare("SELECT DISTINCT p.ID FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE p.post_type = %s AND p.post_status LIKE %s AND (p.post_title LIKE %s OR pm.meta_value LIKE %s)", $type, $status, $search, $search)
+				);
 
-		$post_ids = $wpdb->get_col(
-			$wpdb->prepare($query_ids, $type, $status, $search, $search, $per, $offset)
-		);
+				$results = [];
 
-		$query_count = "SELECT COUNT(DISTINCT p.ID) FROM {$wpdb->posts} p INNER JOIN {$wpdb->postmeta} pm ON p.ID = pm.post_id WHERE p.post_type = %s AND p.post_status LIKE %s AND (p.post_title LIKE %s OR pm.meta_value LIKE %s)";
+				if (!empty($post_ids)) {
+					$posts = get_posts([
+						'post__in' => $post_ids,
+						'post_type' => $type,
+						'orderby' => 'post__in',
+						'posts_per_page' => -1
+					]);
 
-		$total_count = $wpdb->get_var(
-			$wpdb->prepare($query_count, $type, $status, $search, $search)
-		);
+					foreach ($posts as $post) {
+						$all_columns = self::get_all('post', $post->ID);
 
-		$results = [];
+						$result = [];
 
-		if (!empty($post_ids)) {
-			$posts = get_posts([
-				'post__in' => $post_ids,
-				'post_type' => $type,
-				'orderby' => 'post__in',
-				'posts_per_page' => -1,
-			]);
+						foreach ($all_columns as $key => $value) {
+							$new_key = str_replace(self::prefix($type), '', $key);
+							$result[$new_key] = $value;
+						}
 
-			foreach ($posts as $post) {
-				$term_data = [];
+						$result['id'] = $post->ID;
+						$result['title'] = $post->post_title;
 
-				if (count($taxes) > 0) {
-					foreach ($taxes as $tax) {
-						$terms = get_the_terms($post->ID, $tax);
-						$term_data[$tax] = ($terms && !is_wp_error($terms)) ? wp_list_pluck($terms, 'name') : [];
+						$results[] = $result;
 					}
 				}
 
-				$results[] = [
-					'id' => $post->ID,
-					'title' => get_the_title($post),
-					'terms' => $term_data,
+				$results = apply_filters(strtolower(__CLASS__) . '_search_results', $type, $search_term, $results);
+
+				return ($request) ? rest_ensure_response($results) : $results;
+
+				break;
+			}
+			case 'term': {
+
+				$taxonomy = $request->get_param('type');
+				$page = (int)$request->get_param('page');
+				$per = (int)$request->get_param('per');
+				$search = '%' . $wpdb->esc_like($request->get_param('search')) . '%';
+				$offset = ($page - 1) * $per;
+
+				if (empty($taxonomy) || !taxonomy_exists($taxonomy)) {
+					return rest_ensure_response([
+						'results' => [],
+						'search' => $search,
+						'type' => $taxonomy,
+						'total' => 0,
+						'page' => $page,
+						'per' => $per,
+						'pages' => 0
+					]);
+				}
+
+				$query_ids = "
+					SELECT DISTINCT t.term_id
+					FROM {$wpdb->terms} t
+					INNER JOIN {$wpdb->term_taxonomy} tt ON t.term_id = tt.term_id
+					LEFT JOIN {$wpdb->termmeta} tm ON t.term_id = tm.term_id
+					WHERE tt.taxonomy = %s
+					  AND (t.name LIKE %s OR t.slug LIKE %s OR tm.meta_value LIKE %s)
+					LIMIT %d OFFSET %d
+				";
+
+				$term_ids = $wpdb->get_col(
+					$wpdb->prepare($query_ids, $taxonomy, $search, $search, $search, $per, $offset)
+				);
+
+				$query_count = "
+					SELECT COUNT(DISTINCT t.term_id)
+					FROM {$wpdb->terms} t
+					INNER JOIN {$wpdb->term_taxonomy} tt ON t.term_id = tt.term_id
+					LEFT JOIN {$wpdb->termmeta} tm ON t.term_id = tm.term_id
+					WHERE tt.taxonomy = %s
+					  AND (t.name LIKE %s OR t.slug LIKE %s OR tm.meta_value LIKE %s)
+				";
+
+				$total_count = (int) $wpdb->get_var(
+					$wpdb->prepare($query_count, $taxonomy, $search, $search, $search)
+				);
+
+				$results = [];
+
+				if (!empty($term_ids)) {
+					$terms = get_terms([
+						'taxonomy' => $taxonomy,
+						'include' => $term_ids,
+						'orderby' => 'include',
+						'hide_empty' => false
+					]);
+
+					foreach ($terms as $term) {
+						$results[] = [
+							'id' => $term->term_id,
+							'name' => $term->name,
+							'slug' => $term->slug,
+							'meta' => get_term_meta($term->term_id)
+						];
+					}
+				}
+
+				$response = [
+					'results' => $results,
+					'search' => $search,
+					'type' => $taxonomy,
+					'total' => $total_count,
+					'page' => $page,
+					'per' => $per,
+					'pages' => ceil($total_count / $per)
 				];
+
+				return ($request) ? rest_ensure_response($response) : $response;
+
+				break;
+			}
+		}
+	}
+
+	// generic api function
+
+	public static function call(?WP_REST_Request $request = null) {
+		$function = $request->get_param('function');
+		$response = [];
+
+		switch ($function) {
+			case 'nuke': {
+				$type = $request->get_param('type');
+				$slug = $request->get_param('slug');
+				$confirm = $request->get_param('confirm');
+
+				if ($confirm == 'nuke my ' . $slug . ' list') {
+					self::nuke($type, $slug);
+					$response = ['status' => 'success', 'msg' => $slug . ' list nuked'];
+				}
+
+				break;
+			}
+			case 'delete': {
+				$info = $request->get_param('info');
+
+				$id = $info['id'];
+				$type = $info['type'];
+
+				wp_delete_post($id, true);
+
+				$response = ['status' => 'success', 'msg' => $type . ' with id ' . $id . ' deleted'];
+				break;
+			}
+			case 'update': {
+				$info = $request->get_param('info');
+
+				$id = $info['id'];
+				unset($info['id']);
+				$type = $info['type'];
+				unset($info['type']);
+
+				if (count($info) > 0) {
+					foreach ($info as $key => $value) {
+						self::set('post', $id, $key, $value);
+					}
+				}
+
+				$response = ['status' => 'success', 'msg' => $type . ' with id ' . $id . ' updated'];
+				break;
+			}
+			case 'add': {
+				// our searched item id to add
+				$iid = $request->get_param('id');
+
+				// post, term or user
+				$ptu = $request->get_param('ptu');
+
+				// parent id based on ptu, set to 0 if invalid
+				$pid = $request->get_param('pid');
+				$tid = $request->get_param('tid');
+				$uid = $request->get_param('uid');
+
+				// our original post type
+				$type = $request->get_param('type');
+
+				// the type we searched for
+				$search_type = $request->get_param('search_type');
+
+				// the type to create, using the search type
+				// details and add original type as parent
+				$linked_type = $request->get_param('linked_type');
+
+				$title = base64_decode($request->get_param('title'));
+
+				// extra data
+				$extra = $request->get_param('extra');
+
+				// this will be the id of the new item
+				$id = null;
+
+				switch ($ptu) {
+					case 'post': {
+						$id = self::make($linked_type, $title);
+						self::set('post', $id, $type . '_id', $pid);
+						self::set('post', $id, $search_type . '_id', $iid);
+
+						$all_columns = self::get_all('post', $iid);
+
+						foreach ($all_columns as $key => $value) {
+							$new_key = str_replace(self::prefix($search_type), '', $key);
+							$data = (is_array($value)) ? $value[0] : $value;
+							self::set('post', $id, $new_key, $data);
+						}
+
+						if (isset($extra['fields']) && count($extra['fields']) > 0) {
+							foreach ($extra['fields'] as $field => $value) {
+								if (function_exists(self::$def['prefix'] . '_handle_extra_data')) {
+									$lt = [
+										'type' => $linked_type,
+										'id' => $id
+									];
+									$t = [
+										'type' => $type,
+										'id' => $pid
+									];
+									$st = [
+										'type' => $search_type,
+										'id' => $iid
+									];
+									$value = call_user_func_array(self::$def['prefix'] . '_handle_extra_data', [$lt, $t, $st, $field, $value]);
+								}
+
+								self::set('post', $id, $field, $value);
+							}
+						}
+
+						if (isset($extra['taxes']) && count($extra['taxes']) > 0) {
+							foreach ($extra['taxes'] as $tax => $term_id) {
+								wp_set_object_terms($id, [intval($term_id)], $tax, false);
+							}
+						}
+
+						break;
+					}
+				}
+
+				if ($id) {
+					$response = ['status' => 'success', 'msg' => $linked_type . ' added'];
+				}
+				else {
+					$response = ['status' => 'error', 'msg' => $linked_type . ' not added'];
+				}
 			}
 		}
 
-		$result = [
-			'results' => $results,
-			'search' => $search,
-			'type' => $type,
-			'total' => (int)$total_count,
-			'page' => $page,
-			'per' => $per,
-			'pages' => ceil($total_count / $per)
-		];
-
-		return ($request) ? rest_ensure_response($result) : $result;
+		return rest_ensure_response($response);
 	}
 
-	// RENAME THIS
-
 	public static function data_api() {
-		wp_register_script('bt', '');
-		wp_enqueue_script('bt');
+		if (!self::$data_api) {
+			wp_register_script('bt', '');
+			wp_enqueue_script('bt');
 
-		$debounce = 'function debounce(f,w){let t;return function(...a){clearTimeout(t);t=setTimeout(()=>f.apply(this,a),w);};}';
+			$debounce = 'function debounce(f,w){let t;return function(...a){clearTimeout(t);t=setTimeout(()=>f.apply(this,a),w);};}';
 
-		wp_add_inline_script('bt', $debounce . 'const ' . self::$def['plugin'] . ' = ' . json_encode(
-			['api' => [
-				'url' => esc_url_raw(rest_url(self::$def['plugin'] . '-api/v1/data')),
-				'nonce' => wp_create_nonce('wp_rest')
-			]]
-		));
+			wp_add_inline_script('bt', $debounce . 'const ' . self::$def['plugin'] . ' = ' . json_encode(
+				['api' => [
+					'url' => esc_url_raw(rest_url(self::$def['plugin'] . '-api/v1/data')),
+					'call' => esc_url_raw(rest_url(self::$def['plugin'] . '-api/v1/api')),
+					'nonce' => wp_create_nonce('wp_rest')
+				]]
+			));
+
+			self::$data_api = true;			
+		}
 	}
 
 
@@ -592,37 +918,7 @@ class BT {
 			if ($i == 'bt_roles') {
 				// update roles
 
-				$roles = json_decode($setting, true);
-
-				if (self::check($roles)) {
-					if (isset($roles['remove'])) {
-
-						foreach ($roles['remove'] as $role) {
-							if (get_role($role)) {
-								remove_role($role);
-							}
-						}			
-					}
-
-					if (isset($roles['add'])) {
-
-						foreach ($roles['add'] as $role => $details) {
-							$capabilities = [];
-
-							foreach ($details['capabilities'] as $cap) {
-								$capabilities[$cap] = true;
-							}
-
-							if (get_role($role)) {
-								remove_role($role);
-							}
-							add_role($role, $details['label'], $capabilities);
-						}			
-					}
-				}
-				else {
-					// roles definition issue
-				}
+				self::update_roles(json_decode($setting, true));
 			}
 		}
 
@@ -901,16 +1197,170 @@ class BT {
 		echo '</div>';
 	}
 
-	public static function admin_scripts() {
+	public static function admin_scripts($hook) {
 		$screen = get_current_screen();
 
 		if (_BT['bt_fa'] == 'yes') {
 			wp_enqueue_style('fontawesome', 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css', '', '6.7.2', 'all');
 		}
 
+		if (_BT['bt_print'] == 'yes') {
+			wp_enqueue_script('printjs', 'https://printjs-4de6.kxcdn.com/print.min.js', '', '1.5.0', 'all');
+			wp_enqueue_style('printcss', 'https://printjs-4de6.kxcdn.com/print.min.css', '', '1.5.0', 'all');
+		}
+
 		if (null === $screen) {
 			return;
 		}
+
+		wp_localize_script('btu', 'btu', [
+			'page' => $hook
+		]);
+
+		$js = <<<JS
+			console.log('!');
+		JS;
+
+		wp_add_inline_script('btu', $js);
+
+		if ($hook == 'edit.php') {
+			// we are on a post list page
+
+			$type = $_GET['post_type'] ?? null;
+
+			if (!$type || !isset(self::$posts[$type])) {
+				return;
+			}
+
+			if (!isset(self::$posts[$type]['sortable'])) {
+				return;
+			}
+
+			if (self::$posts[$type]['sortable'] === true) {
+				wp_enqueue_script('jquery-ui-sortable');
+				wp_register_script('btp', false);
+				wp_enqueue_script('btp', false, ['jquery', 'jquery-ui-sortable'], null, true);
+				wp_localize_script('btp', 'btp', [
+					'post_type' => $type
+				]);
+
+				$js = <<<JS
+					(function($) {
+						if (typeof btp === 'undefined') {
+							return;
+						}
+						let list = $('#the-list');
+						if (!list.length) {
+							return;
+						}
+						list.sortable({
+							items: '> tr',
+							cursor: 'move',
+							axis: 'y',
+							opacity: 0.9,
+							containment: 'parent',
+							tolerance: 'pointer',
+							forcePlaceholderSize: true,
+							update: function() {
+								var order = [];
+								list.find('tr').each(function() {
+									var id = $(this).attr('id');
+									if (id && id.indexOf('post-') === 0) {
+										order.push(parseInt(id.replace('post-',''), 10));
+									}
+								});
+								$.ajax({
+									url: ajaxurl,
+									type: 'POST',
+									data: {
+										action: 'bt_ajax',
+										hash: _bt.hash,
+										nonce: _bt.nonce,
+										payload: {
+											cmd: 'update_post_order',
+											post_type: btp.post_type,
+											order: order
+										}
+									}
+								});
+							}
+						})
+					})(jQuery);
+				JS;
+
+				wp_add_inline_script('btp', $js);
+			}
+		}
+
+		if ($hook == 'edit-tags.php' && isset($_GET['taxonomy'])) {
+			// we are on a term list page
+
+			$tax = $_GET['taxonomy'] ?? '';
+
+			if (!$tax || !isset(self::$taxes[$tax])) {
+				return;
+			}
+
+			if (!isset(self::$taxes[$tax]['sortable'])) {
+				return;
+			}
+
+			if (self::$taxes[$tax]['sortable'] === true) {
+				wp_enqueue_script('jquery-ui-sortable');
+				wp_register_script('btt', false);
+				wp_enqueue_script('btt', false, ['jquery', 'jquery-ui-sortable'], null, true);
+				wp_localize_script('btt', 'btt', [
+					'term' => $tax
+				]);
+
+				$js = <<<JS
+					(function($) {
+						if (typeof btt === 'undefined') {
+							return;
+						}
+						let list = $('#the-list');
+						if (!list.length) {
+							return;
+						}
+						list.sortable({
+							items: '> tr',
+							cursor: 'move',
+							axis: 'y',
+							opacity: 0.9,
+							containment: 'parent',
+							tolerance: 'pointer',
+							forcePlaceholderSize: true,
+							update: function() {
+								var order = [];
+								list.find('tr').each(function() {
+									var id = $(this).attr('id');
+									if (id && id.indexOf('tag-') === 0) {
+										order.push(parseInt(id.replace('tag-',''), 10));
+									}
+								});
+								$.ajax({
+									url: ajaxurl,
+									type: 'POST',
+									data: {
+										action: 'bt_ajax',
+										hash: _bt.hash,
+										nonce: _bt.nonce,
+										payload: {
+											cmd: 'update_term_order',
+											term: btt.term,
+											order: order
+										}
+									}
+								});
+							}
+						})
+					})(jQuery);
+				JS;
+
+				wp_add_inline_script('btt', $js);
+			}
+		}
+
 		if ($screen->base !== 'toplevel_page_' . self::$def['plugin'] . '-menu') {
 			return;
 		}
@@ -961,10 +1411,93 @@ class BT {
 		return $parent_file;
 	}
 
-	public static function set_vars() {
+	public static function set_vars_and_styles() {
 		$user = wp_get_current_user();
 ?>
-		<script>const _bt = { hash: '<?php echo hash('sha1', 'e' . $user->ID); ?>', nonce: '<?php echo self::$def['nonce']; ?>' };</script>
+		<script>
+			const _bt = { hash: '<?php echo hash('sha1', 'e' . $user->ID); ?>', nonce: '<?php echo self::$def['nonce']; ?>' };
+			jQuery(function($) {
+				let n = $('.tablenav.top span.displaying-num').detach();
+				let p = $('.tablenav.top span.pagination-links').detach();
+				let t = $('.tablenav.top div.tablenav-pages');
+				t.append('<div id="ajax-search"></div><div id="pagination"></div');
+				$('#pagination').append(n).append(p);
+			});
+			function bt_download_csv(csv, filename) {
+				const csv_blob = new Blob([csv], { type: 'text/csv' });
+				const url = URL.createObjectURL(csv_blob);
+
+				const a = document.createElement('a');
+				a.setAttribute('href', url);
+				a.setAttribute('download', filename);
+				a.click();
+				URL.revokeObjectURL(url);
+			}
+			function bt_table_to_csv(tid) {
+				const rows = document.querySelectorAll('#' + tid + ' tr');
+				let csv = '';
+
+				rows.forEach(row => {
+					const cols = row.querySelectorAll('td, th');
+					const row_data = Array.from(cols).map(col => col.textContent).join(',');
+					csv += row_data + '\n';
+				});
+
+				return csv;
+			}
+			/*
+				payload: {
+					cmd: ' ** your command ** ',
+					data: ' ** your data ** '
+				}
+
+			*/
+			function bt_do_ajax(payload, success_cb, error_cb) {
+				$.ajax({
+					url: ajaxurl,
+					type: 'POST',
+					data: {
+						action: 'bt_ajax',
+						hash: _bt.hash,
+						nonce: _bt.nonce,
+						payload: payload
+					},
+					success: function(response) {success_cb(response)},
+					error: function(xhr, status, error) {error_cb(xhr, status, error)}
+				});
+			}
+		</script>
+		<style>
+			.tablenav .actions { padding: 0 8px 8px 0; }
+			.tablenav.top .tablenav-pages {
+				width: 100%;
+
+				div {
+					display: inline-block;
+					width: 50%;
+				}
+
+				div#pagination {
+					text-align: right;
+				}
+			}
+			.tablenav .actions select {
+				margin-bottom: 6px;
+			}
+			.wrap {
+				h1.wp-heading-inline {
+					display: block !important;
+					padding-bottom: 12px;
+					font-size: 32px;
+					font-weight: 700;
+				}
+
+				.page-title-action {
+					margin-left: 0 !important;
+					margin-right: 4px !important;
+				}
+			}
+		</style>
 <?php
 	}
 
@@ -1019,7 +1552,6 @@ class BT {
 					$string = (in_array(strtolower(trim($string)), $y_not) ? $string . 's' : rtrim($string, 'y') . 'ies');
 					break;
 				}
-				case 'h':
 				case 's': {
 					$string = $string . 'es';
 					break;
@@ -1084,67 +1616,6 @@ class BT {
 		return $messages;
 	}
 
-	// dialog box and popover setup
-
-	public static function dialog_and_popover() {
-		$nav = '';
-
-		$tabs = [
-			'search'
-		];
-
-		$tabs = apply_filters(strtolower(__CLASS__) . '_dialog_tabs', $tabs);
-
-		if ($tabs && is_array($tabs) && count($tabs) > 0) {
-			$nav .= '<nav id="bt-dlg-nav" class="nav-tab-wrapper">';
-
-			foreach ($tabs as $tab) {
-				$nav .= '<a href="#tab-' . $tab . '" class="nav-tab caps">' . $tab . '</a>';
-			}
-
-			$nav .= '</nav>';
-		}
-
-		$content = '<div class="tab-content" id="tab-search"></div>';
-
-		$content = apply_filters(strtolower(__CLASS__) . '_dialog_content', $content);
-
-		$html = <<<HTML
-			<dialog id="bt-view">
-				<div class="content">
-					<div class="header">
-						<h2></h2>
-						<span class="close" onclick="window.BT.dlg('close', 'bt-view');">&times;</span>
-					</div>
-					<div class="body">
-						{$nav}
-						{$content}
-					</div>
-					<div class="footer">
-						<span class="button button-primary" id="dlg-confirm" onclick="window.BT[window.BT.cf].done();"><i class="fa-solid fa-check"></i> Confirm</span>
-						<span class="button button-secondary" id="dlg-cancel" onclick="window.BT.dlg('close', 'bt-view');"><i class="fa-solid fa-xmark"></i></i> Cancel</span>
-					</div>
-				</div>
-			</dialog>
-			<script>
-				jQuery(function($) {
-					$('#bt-view .tab-content').eq(0).show();
-					$('#bt-view .nav-tab').eq(0).addClass('nav-tab-active');
-					$('#bt-view nav a').on('click', function(e) {
-						e.preventDefault();
-						$('#bt-view .nav-tab').removeClass('nav-tab-active');
-						var tab = $(this).attr('href');
-						$('#bt-view .tab-content').hide();
-						$(this).addClass('nav-tab-active');
-						$(tab).show();
-					});
-				});
-			</script>
-			<div id="bt-popup" popover></div>
-HTML;
-		echo $html;
-	}
-
 	// helper - get our fields, sans-sections
 
 	public static function get_meta_fields($sections) {
@@ -1167,15 +1638,209 @@ HTML;
 		return $fields;
 	}
 
+	// get meta field array, $ptu = posts/taxes/roles
 
-	//    ▄▄▄▄███▄▄▄▄       ▄████████      ███         ▄████████  
-	//  ▄██▀▀▀███▀▀▀██▄    ███    ███  ▀█████████▄    ███    ███  
-	//  ███   ███   ███    ███    █▀      ▀███▀▀██    ███    ███  
-	//  ███   ███   ███   ▄███▄▄▄          ███   ▀    ███    ███  
-	//  ███   ███   ███  ▀▀███▀▀▀          ███      ▀███████████  
-	//  ███   ███   ███    ███    █▄       ███        ███    ███  
-	//  ███   ███   ███    ███    ███      ███        ███    ███  
-	//   ▀█   ███   █▀     ██████████     ▄████▀      ███    █▀
+	public static function get_meta_field($ptu, $type, $field_name) {
+		switch ($ptu) {
+			case 'post': {
+				$what = 'posts';
+				break;
+			}
+			case 'term': {
+				$what = 'taxes';
+				break;
+			}
+			case 'user': {
+				$what = 'roles';
+				break;
+			}
+		}
+
+		if (!isset(self::$$what[$type])) {
+			return false;
+		}
+
+		$sections = self::$$what[$type]['sections'];
+
+		if (count($sections)) {
+			foreach ($sections as $section => $data) {
+				if (count($data['fields'])) {
+					foreach ($data['fields'] as $field => $keys) {
+						if ($field == $field_name) {
+							return [$field => $keys];
+						}
+					}
+				}
+			}
+		}
+
+		return false;
+	}
+
+	// generate a handler link
+
+	public static function handler_link($action, $array) {
+		$url = get_admin_url() . 'admin.php?handle=' . self::hash() . '&action=' . $action;
+
+		if (is_array($array) && count($array) > 0) {
+			foreach ($array as $key => $value) {
+				$url .= '&' . $key . '=' . $value;
+			}
+		}
+
+		return $url;
+	}
+
+	// generate handler button
+
+	public static function handler_button($action, $array, $icon, $title, $primary = true) {
+		return '<a href="' . self::handler_link($action, $array) . '"><span class="button-' . (($primary) ? 'primary' : 'secondary') . '"><i class="' . $icon . '"></i> &nbsp; ' . $title . '</span></a>';
+	}
+
+	// handle our custom actions
+
+	public static function handle_actions() {
+		if (isset($_GET['handle']) && $_GET['handle'] === self::hash()) {
+			$action = $_GET['action'] ?? 'nothing';
+
+			switch ($action) {
+				case 'new_post': {
+					$type = $_GET['type'] ?? null;
+					$title = $_GET['title'] ?? null;
+
+					if ($type && $title) {
+						$id = self::make($type, '');
+						wp_update_post([
+							'ID' => $id,
+							'post_title' => BT::label($type, false, true) . ' #' . $id . ' for ' . base64_decode($title)
+						]);
+
+						if (function_exists(self::$def['prefix'] . '_after_new_post')) {
+							call_user_func_array(self::$def['prefix'] . '_after_new_post', [$id, $type]);
+						}
+
+						$tax = $_GET['taxonomy'] ?? null;
+						$term_id = (int)$_GET['term_id'] ?? null;
+
+						if ($tax && $term_id) {
+							wp_set_object_terms($id, $term_id, $tax);
+						}
+
+						wp_redirect(get_admin_url() . 'post.php?post=' . $id . '&action=edit');
+						die;
+					}
+
+					break;
+				}
+				default: {
+					if (function_exists(self::$def['prefix'] . '_handle_action')) {
+						$referer = $_SERVER['HTTP_REFERER'] ?? null;
+						call_user_func_array(self::$def['prefix'] . '_handle_action', [$action, $referer]);
+					}
+				}
+			}
+		}
+	}
+
+	public static function get_current_id($what) {
+		switch ($what) {
+			case 'post': {
+				return $_GET['post'] ?? null;
+			}
+			case 'taxonomy': {
+				return $_GET['tag_ID'] ?? null;
+			}
+			case 'roles': {
+				return $_GET['user_id'] ?? null;
+			}
+			default: {
+				return null;
+			}
+		}
+	}
+
+
+	//     ▄████████   ▄██████▄    ▄██████▄       ███         ▄████████     ▄████████  
+	//    ███    ███  ███    ███  ███    ███  ▀█████████▄    ███    ███    ███    ███  
+	//    ███    █▀   ███    ███  ███    ███     ▀███▀▀██    ███    █▀     ███    ███  
+	//   ▄███▄▄▄      ███    ███  ███    ███      ███   ▀   ▄███▄▄▄       ▄███▄▄▄▄██▀  
+	//  ▀▀███▀▀▀      ███    ███  ███    ███      ███      ▀▀███▀▀▀      ▀▀███▀▀▀▀▀    
+	//    ███         ███    ███  ███    ███      ███        ███    █▄   ▀███████████  
+	//    ███         ███    ███  ███    ███      ███        ███    ███    ███    ███  
+	//    ███          ▀██████▀    ▀██████▀      ▄████▀      ██████████    ███    ███
+
+	public static function admin_footer() {
+		$nav = '';
+
+		$tabs = [
+			'search'
+		];
+
+		$tabs = apply_filters(strtolower(__CLASS__) . '_dialog_tabs', $tabs);
+
+		if ($tabs && is_array($tabs) && count($tabs) > 0) {
+			$nav .= '<nav id="bt-dlg-nav" class="nav-tab-wrapper">';
+
+			foreach ($tabs as $tab) {
+				$nav .= '<a href="#tab-' . $tab . '" class="nav-tab caps">' . $tab . '</a>';
+			}
+
+			$nav .= '</nav>';
+		}
+
+		$content = '<div class="tab-content" id="tab-search"><br><input type="text" id="bt-search-term" value="" autocomplete="off">&nbsp;<span class="button button-primary" id="bt-search-go"><i class="fa-solid fa-magnifying-glass"></i></span><table id="bt-results"></table></div>';
+
+		$content = apply_filters(strtolower(__CLASS__) . '_dialog_content', $content);
+
+		$html = <<<HTML
+			<dialog id="bt-view">
+				<div class="content">
+					<div class="header">
+						<h2></h2>
+						<span class="close" onclick="window.BT.dlg('close', 'bt-view');">&times;</span>
+					</div>
+					<div class="body">
+						{$nav}
+						{$content}
+					</div>
+					<div class="footer">
+						<span class="button button-primary" id="dlg-confirm" onclick="window.BT[window.BT.cf].done(0, '', '');"><i class="fa-solid fa-check"></i> Confirm</span>
+						<span class="button button-secondary" id="dlg-cancel" onclick="window.BT.dlg('close', 'bt-view');"><i class="fa-solid fa-xmark"></i></i> Cancel</span>
+					</div>
+				</div>
+			</dialog>
+			<script>
+				jQuery(function($) {
+					$('#bt-view .tab-content').eq(0).show();
+					$('#bt-view .nav-tab').eq(0).addClass('nav-tab-active');
+					$('#bt-view nav a').on('click', function(e) {
+						e.preventDefault();
+						$('#bt-view .nav-tab').removeClass('nav-tab-active');
+						var tab = $(this).attr('href');
+						$('#bt-view .tab-content').hide();
+						$(this).addClass('nav-tab-active');
+						$(tab).show();
+					});
+				});
+			</script>
+			<div id="bt-popup" popover></div>
+		HTML;
+		echo $html;
+
+		if (function_exists(self::$def['prefix'] . '_debug')) {
+			bt_debug();
+		}
+	}
+
+
+	//   ▄████████     ▄████████     ▄████████  
+	//  ███    ███    ███    ███    ███    ███  
+	//  ███    █▀     ███    █▀     ███    █▀   
+	//  ███           ███           ███         
+	//  ███         ▀███████████  ▀███████████  
+	//  ███    █▄            ███           ███  
+	//  ███    ███     ▄█    ███     ▄█    ███  
+	//  ████████▀    ▄████████▀    ▄████████▀
 
 	public static function gen_css() {
 		$idp = strtolower(self::$def['prefix']);
@@ -1195,12 +1860,18 @@ HTML;
 					margin-bottom: 10px;
 					width: 80%;
 
-					input, select, textarea {
+					input:not(.hidden),
+					select,
+					textarea:not(.hidden) {
 						box-sizing: border-box;
 						display: inline-block;
 						padding: 3px;
 						vertical-align: middle;
 						margin-top: 10px;
+					}
+
+					textarea:not(.hidden) {
+						min-height: 60px;
 					}
 
 					.adjust {
@@ -1214,8 +1885,8 @@ HTML;
 						font-size: 18px;
 						font-weight: 700;
 						margin: 1.5rem 0 0;
-					    background: rgba(250, 250, 250, 0.8);
-					    padding: 6px;
+						background: rgba(250, 250, 250, 0.8);
+						padding: 6px;
 						color: #000;
 					}
 				}
@@ -1350,7 +2021,7 @@ HTML;
 					content: "";
 					height: 20px;
 					width: 20px;
-					left: 4px;
+					left: 5px;
 					bottom: 4px;
 					background-color: white;
 					transition: .4s;
@@ -1363,7 +2034,7 @@ HTML;
 					box-shadow: 0 0 1px var(--admin-highlight, #2271b1);
 				}
 				input:checked + .slider:before {
-					transform: translateX(22px);
+					transform: translateX(20px);
 				}
 				.bt_data-view {
 					display: inline-block;
@@ -1376,21 +2047,18 @@ HTML;
 					height: 37px;
 				}
 				.email-button,
-				.website-button {
-					position: relative;
-					top: 6px;
-					margin-right: 1px;
-					height: 36px;
-					line-height: 33px;
-					text-align: center;
-				}
+				.website-button,
+				.array-button,
 				.choose-item-button,
 				.choose-file-button,
 				.view-file-button {
 					position: relative;
 					top: 7px;
-					margin-right: 1px;
+					margin-inline: 2px;
 					height: 36px;
+					line-height: 33px;
+					text-align: center;
+					width: 50px;
 				}
 				.plus-button {
 					font-size: 2rem;
@@ -1448,6 +2116,69 @@ HTML;
 						background: #d90000;
 						border: 0;
 						border-radius: 0 4px 0 4px;
+					}
+				}
+				.bt-array-holder textarea,
+				.bt-array-holder input {
+					width: 100%;
+				}
+				table.bt-items {
+					margin-top: 15px;
+					width: 99%;
+					table-layout: fixed;
+
+					th, td {
+						text-align: left;
+					}
+
+					th.right, td.right {
+						text-align: right;
+					}
+
+					td {
+						input, select {
+							width: 99%;
+						}
+
+						input.expand {
+							background: var(--primary-colour);
+							background-image: url("data:image/svg+xml;utf8,<svg fill='white' width='22' height='22' viewBox='0 0 512 512' xmlns='http://www.w3.org/2000/svg'><path d='M105.29 0h250.15c15.54.79 30.92 5.82 43.53 15.03 20.71 14.65 33.59 39.57 33.46 64.96.1 39.33 0 78.67.05 118 .03 4.54.11 9.3-1.97 13.46-3.18 7.04-10.75 11.78-18.48 11.48-10.31.06-19.43-9.04-19.5-19.33-.17-40.87.02-81.75-.09-122.63.05-9.95-3.42-19.94-10.11-27.37-7.74-8.94-19.59-13.78-31.34-13.58-79-.05-158 0-237-.03-6.62-.02-13.42-.08-19.75 2.1-12.03 3.82-21.89 13.74-25.65 25.78-2.3 6.79-2.03 14.08-2.02 21.15-.01 111.64 0 223.27-.01 334.91-.02 6.78-.16 13.75 2.05 20.26 3.77 12 13.6 21.9 25.6 25.71 5.69 1.97 11.79 2.11 17.75 2.12 19.68-.05 39.36.01 59.04-.03 3.98-.04 8.1.35 11.65 2.29 8 4.02 12.48 13.83 10.17 22.5-1.94 8.36-9.69 14.7-18.23 15.22H105.3c-14.93-.37-29.79-4.74-42.27-12.99-16.13-10.47-28.3-26.92-33.44-45.47-2.32-7.96-3.07-16.29-3.03-24.55.03-116.33-.05-232.66.04-348.99-.12-24.68 12.03-48.94 31.76-63.72C71.74 6 88.45.37 105.29 0Z'/><path d='M122.35 120.48c2.2-.43 4.46-.48 6.7-.49 67.63.04 135.27-.03 202.91.03 6.25-.1 12.5 2.75 16.27 7.78 4.85 6.13 5.54 15.15 1.63 21.92-3.45 6.41-10.62 10.42-17.87 10.26-67 .06-134.01-.01-201.02.03-4.62.07-9.46.01-13.62-2.26-7.48-3.7-11.96-12.46-10.6-20.69 1.07-8.08 7.6-15.02 15.6-16.58ZM122.38 200.47c2.17-.42 4.38-.47 6.59-.48 67.7.04 135.4-.03 203.11.04 6.46-.1 12.9 3.04 16.6 8.38 4.48 6.13 4.96 14.85 1.13 21.41-3.48 6.35-10.59 10.31-17.8 10.16-68.03.05-136.05 0-204.08.02-5.36.16-10.85-1.49-14.83-5.17-5.74-5.08-8.02-13.61-5.64-20.89 2.07-6.74 8-12.1 14.92-13.47ZM382.81 289.84c9.55-9.7 22.49-15.97 36.04-17.39 14.6-1.67 29.79 2.25 41.68 10.93 13.5 9.63 22.61 25.12 24.45 41.61 1.71 14.02-1.8 28.58-9.66 40.32-4.03 6.16-9.51 11.14-14.66 16.33-33.89 33.81-67.75 67.64-101.66 101.43-3.47 3.62-8.17 5.65-12.98 6.83-26.97 7.25-53.75 15.26-80.83 22.1h-2.77c-8.84-.5-16.83-7.3-18.45-16.05-1.43-6.51 1.38-12.84 3.14-18.98 6.99-22.96 13.92-45.95 20.96-68.9 1.51-5.51 5.67-9.59 9.66-13.43 35.04-34.92 70.03-69.89 105.08-104.8m37.17 22.99c-5.12 1.36-9.09 5.11-12.47 8.99 9.49 9.31 18.79 18.82 28.26 28.16 3.08-3.05 6.4-6.11 8.06-10.22 2.89-6.7 1.7-14.97-3.07-20.53-4.86-5.99-13.39-8.62-20.78-6.4m-42.41 38.66c-24.08 24.24-48.52 48.15-72.44 72.52-4.18 12.93-7.95 26.02-11.97 39.01 12.83-3.52 25.63-7.12 38.46-10.62 1.18-.33 2.4-.68 3.22-1.66 24.17-24.19 48.43-48.3 72.58-72.52-9.1-9.08-18.22-18.15-27.28-27.28-.79-1.5-1.92-.14-2.57.55ZM122.41 280.47c3.48-.64 7.04-.46 10.56-.47 37.67 0 75.34.01 113.02-.01 4.02.04 8.19-.24 12.04 1.14 6.61 2.17 11.78 8.09 13.07 14.92 1.61 7.5-1.61 15.76-7.9 20.16-3.79 2.81-8.58 3.9-13.24 3.79H133.01c-5.29.01-10.92.37-15.71-2.28-7.46-3.71-11.9-12.45-10.55-20.66 1.07-8.1 7.64-15.05 15.66-16.59Z'/></svg>");
+							background-repeat: no-repeat;
+							background-position: 8px 6px;
+							position: relative;
+							color: transparent;
+							cursor: pointer;
+							transition: all 0.3s ease;
+							width: 38px !important;
+						}
+
+						input.expand:not(.expanded):hover {
+							background-color: goldenrod;
+						}
+
+						input.expand:not(:placeholder-shown) {
+							background-color: green;	
+						}
+
+						input.expand.expanded {
+							background: #fefefe;
+							color: #000;
+							cursor: text;
+							width: 100% !important;
+						}
+					}
+
+					td.collapsed {
+						opacity: 0;
+						width: 0 !important;
+						padding: 0;
+						border: none;
+					}
+
+					td span.delete {
+						position: relative;
+						top: 5px;
+						left: 2px;
 					}
 				}
 				.bt-list-select {
@@ -1584,8 +2315,11 @@ HTML;
 				display: none;
 			}
 			.button-align {
+				position: relative;
 				display: inline-block;
-				padding: 5px 10px 0;
+				font-size: 16px;
+				left: 10px;
+				top: 12px;
 			}
 			dialog#bt-view {
 				border: none;
@@ -1675,15 +2409,10 @@ HTML;
 						#bt-results {
 							margin-top: 15px;
 							width: 100%;
+							border-collapse: collapse;
 
 							th {
 								text-align: left;
-							}
-
-							.p-minus,
-							.p-plus {
-								width: 28px;
-								user-select: none;
 							}
 
 							.p-prev,
@@ -1702,12 +2431,26 @@ HTML;
 								max-width: 50px;
 							}
 
-							tr.product:hover {
+							tr.item {
+								td {
+									padding: 2px 0;
+								}
+							}
+
+							tr.item:hover {
 								background: #eeefee;
 							}
 
 							td.ctrls {
 								text-align: right;
+
+								span i {
+									font-size: 24px;
+									width: 28px;
+									height: 24px;
+									user-select: none;
+									color: #fff;
+								}
 							}
 						}
 					}
@@ -1745,11 +2488,41 @@ HTML;
 				75% { box-shadow: 0px 20px, 0px  35px, -10px 50px; }
 				100% { box-shadow: -10px 20px, 10px  35px, 0px 50px; }
 			}
+			.t-right {
+				text-align: right;
+			}
+			.t-left {
+				text-align: left;
+			}
+			#postbox-container-1 {
+				position: relative;
+			}
+			#submitdiv {
+				position: sticky;
+				top: 64px;
+				z-index: 1000;
+				background: #fff;
+			}
 		</style>
 <?php
 	}
 
-	public static function gen_js() {
+	//       ▄█     ▄████████  
+	//      ███    ███    ███  
+	//      ███    ███    █▀   
+	//      ███    ███         
+	//      ███  ▀███████████  
+	//      ███           ███  
+	//  █▄ ▄███     ▄█    ███  
+	//  ▀▀▀▀▀▀    ▄████████▀
+
+	public static function gen_js($ptu) {
+		if (function_exists(__CLASS__ . '_pass_extra_data')) {
+			$extra = call_user_func(__CLASS__ . '_pass_extra_data');
+		}
+		else {
+			$extra = '{}';
+		}
 ?>
 		<script>
 			var $ = jQuery;
@@ -1767,29 +2540,36 @@ HTML;
 					var a = $('#' + this.field).val().split(',');
 					return a.filter((val) => val !== '');
 				};
-				this.set = function(imgs) {
-					$('#' + this.field).val(imgs.join());
+				this.set = function(files) {
+					$('#' + this.field).val(files.join());
 				};
 				this.del = function(index) {
-					var imgs = this.get();
-					imgs.splice(index, 1);
-					this.set(imgs);
+					var files = this.get();
+					files.splice(index, 1);
+					this.set(files);
 					this.gen();
 				};
 				this.add = function(img) {
-					var imgs = this.get();
-					imgs.push(img);
-					this.set(imgs);
+					var files = this.get();
+					files.push(img);
+					this.set(files);
 					this.gen();
 				};
 				this.gen = function() {
 					var field = this.field;
 					var ul = $('#' + field + '_gallery');
 					ul.empty();
-					var imgs = this.get();
-					$.each(imgs, function(i, v) {
-						var url = (window.BT.sub == 1) ? '<?php echo content_url(); ?>/uploads' + v : '<?php echo wp_get_upload_dir()['url']; ?>/' + v;
-						ul.append('<li><img src="' + url + '"><span class="del" onclick="window.BT.' + field + '.del(' + i + ')">&times;</span></li>');
+					var files = this.get();
+					$.each(files, function(i, v) {
+						let url = (window.BT.sub == 1) ? '<?php echo content_url(); ?>/uploads' + v : '<?php echo wp_get_upload_dir()['url']; ?>/' + v;
+						let ext = url.split('.').pop();
+						let exts = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'avif', 'svg'];
+						if (exts.indexOf(ext) > -1) {
+							ul.append('<li><a href="' + url + '" target="_blank"><img src="' + url + '"></a><span class="del" onclick="window.BT.' + field + '.del(' + i + ')">&times;</span></li>');
+						}
+						else {
+							ul.append('<li><p><a href="' + url + '" target="_blank">' + v + '</a></p><span class="del" onclick="window.BT.' + field + '.del(' + i + ')">&times;</span></li>');
+						}
 					});
 				};
 			}
@@ -1827,150 +2607,116 @@ HTML;
 				};
 			}
 
-			function multi(e, t) {
-				this.field = window.BT.cf = e;
+			function items(f, t, st, lt, sc, lc) {
+				this.field = window.BT.cf = f;
 				this.type = t;
-				this.get = function() {
-					var a = $('#' + this.field).val();
-					if (a == '') {
-						a = '[]';
+				this.search_type = st;
+				this.linked_type = lt;
+				this.cols = Object.entries(sc).map(([data, title]) => {
+					const cd = { data, title };
+					if (data == 'sale_price') {
+						cd.className = 'dt-left';
 					}
-					return JSON.parse(a);
-				};
-				this.set = function(items) {
-					$('#' + this.field).val(JSON.stringify(items));
-				};
-				this.del = function(item) {
-					var items = this.get();
-					this.set(items.filter(obj => obj.id !== item));
-					this.gen();
-				};
-				this.add = function(item, title, num) {
-					var items = this.get();
-					items.push({ 'id': item, 'title': title, 'num': num });
-					this.set(items);
-				};
-				this.done = function() {
-					var m = this;
-					$('tr.product').each(function(i, v) {
-						let p = $(v).find('.num');
-						let t = $(v).find('.title');
-						let n = Number(p.val());
-						if (n > 0) {
-							m.add(p.data('id'), window.BT.e64(t.text()), n);
-						}
-					});
-					window.BT.dlg('close', 'bt-view');
- 					this.gen();
- 				};
-				this.minus = function(item) {
+					return cd;
+				});
+				this.cols.push({
+					data: null,
+					title: '',
+					orderable: false,
+					searchable: false,
+					render: function(data, type, row, meta) {
+						let title = window.BT.e64(row.title);
+						return `<span class="button-primary bt-add" data-title="${title}" data-id="${row.id}">Add</span>`;
+					}
+				})
 
-				};
-				this.plus = function(item) {
-
-				};
 				this.dlg = function() {
-					var type = this.type;
-					$('#bt-view .header h2').html('Add a <span class="caps">' + type + '</span>');
+					$('#bt-view .header h2').html('Add a <span class="caps">' + this.search_type + '</span>');
 					window.BT.dlg('open', 'bt-view');
-					var s = $('#bt-view #tab-search');
-					s.empty();
-					s.append('<br><input type="text" id="bt-search-term" value="">');
-					s.append('&nbsp;<span class="button button-primary" id="bt-search-go"><i class="fa-solid fa-magnifying-glass"></i></span>');
-					s.append('<table id="bt-results"></table>');
-					var m = this;
+					if (typeof window.BT.table === 'undefined') {
+						window.BT.table = $('#bt-results').DataTable({
+							data: [],
+							columns: this.cols,
+							layout: {
+								top: 'info',
+								topStart: null,
+								topEnd: null,
+								bottom: 'paging',
+								bottomStart: null,
+								bottomEnd: null
+							}
+						});
+					}
+					$('#bt-results_wrapper').hide();
+					var i = this;
+					var s = $('#bt-view #bt-search-term');
+					$(document).off('click', '#bt-search-go');
 					$(document).on('click', '#bt-search-go', function(e) {
-						m.fetch($('#bt-view #bt-search-term').val(), 1, 15);
+						i.fetch(sc, s.val(), 1, 10);
 					});
+					$(document).off('keypress', '#bt-search-term');
 					$(document).on('keypress', '#bt-search-term', function(e) {
 						if (e.which === 13) {
 							e.preventDefault();
-							m.fetch($('#bt-view #bt-search-term').val(), 1, 15);
+							i.fetch(sc, s.val(), 1, 10);
 						}
 					});
-					$('#bt-view #bt-search-term').focus();
+					$(document).off('click', '.bt-add');
+					$(document).on('click', '.bt-add', function(e) {
+						let id = $(this).data('id');
+						let title = $(this).data('title');
+						window.BT[window.BT.cf].done(id, 0, title);
+					});
+					s.focus();
 				};
-				this.fetch = function(search, page, per) {
-					var t = $('#bt-view #bt-results');
-					window.BT.ref = {
-						t: this,
-						s: search,
-						p: page,
-						per: per
-					};
-					t.empty();
-					t.append('<tr><td colspan="5"><span class="loader"></span></td></tr>');
+
+				this.fetch = function(cols, search) {
 					window.BT.get({
-						type: this.type,
-						search: search,
-						page: page,
-						per: per
+						ptu: window.BT.ptu,
+						type: this.search_type,
+						cols: cols,
+						search: search
 					}, function(r) {
-						t.empty();
-						t.append('<tr><th>Product</th><th>Category</th><th>Supplier</th><th></th></tr>');
-						if (r.hasOwnProperty('results')) {
-							if (r.results.length > 0) {
-								$.each(r.results, function(i, v) {
-									t.append('<tr class="product"><td class="title">' + v.title + '</td><td>' + v.terms.product_category.join(', ') + '</td><td>' + v.terms.supplier.join(', ') + '</td><td class="ctrls"><span class="button button-primary p-minus" data-id="' + v.id + '">-</span> <input class="num" type="text" id="n-' + v.id + '" data-id="' + v.id + '" value="0"> <span class="button button-primary p-plus" data-id="' + v.id + '">+</span></td></td>');
-								});
-								t.append('<tr><td colspan="4"><br><strong>Found ' + r.total + ' result' + ((r.total > 1) ? 's' : '') + ' - Page ' + r.page + ' of ' + r.pages + '</strong></td></tr>');
-								if (r.pages > 1) {
-									t.append('<tr><td colspan="4">');
-									if (r.page > 1) {
-										t.append('<span class="p-prev" onclick="window.BT.ref.t.fetch(window.BT.ref.s, (window.BT.ref.p - 1), window.BT.ref.per);"><i class="fa-solid fa-circle-chevron-left"></i></span>&nbsp;');
-									}
-									else {
-										t.append('<span class="off"><i class="fa-solid fa-circle-chevron-left"></i></span>&nbsp;');
-									}
-									if (r.page < r.pages) {
-										t.append('<span class="p-next" onclick="window.BT.ref.t.fetch(window.BT.ref.s, (window.BT.ref.p + 1), window.BT.ref.per);"><i class="fa-solid fa-circle-chevron-right"></i></span>');
-									}
-									else {
-										t.append('<span class="off"><i class="fa-solid fa-circle-chevron-right"></i></span>');
-									}
-									t.append('</td></tr>');
-								}
-								$(document).off('click', '.p-minus');
-								$(document).off('click', '.p-plus');
-								$(document).on('click', '.p-minus', function(e) {
-									let id = $(this).data('id');
-									let n = Number($('#n-' + id).val());
-									if (n > 0) {
-										$('#n-' + id).val(n - 1);
-									}
-								});
-								$(document).on('click', '.p-plus', function(e) {
-									let id = $(this).data('id');
-									let n = Number($('#n-' + id).val());
-									$('#n-' + id).val(n + 1);
-								});
-							}
-							else {
-								t.append('<tr><td>No results</td></td>');
-							}
-						}
-						else {
-							t.append('<tr><td>There was an error fetching data</td></td>');
-						}
+						window.BT.table.clear();
+						window.BT.table.rows.add(r);
+						window.BT.table.draw();
+						$('#bt-results_wrapper').show();
 					});
 				};
-				this.gen = function() {
-					var field = this.field;
-					var ul = $('#' + field + '_list');
-					ul.empty();
-					var items = this.get();
-					$.each(items, function(i, v) {
-						var text = $('#selector_' + field + ' option[value="' + v + '"]').text();
-						ul.append('<li><p>' + window.BT.d64(v.title).toLowerCase() + '</p><span class="del" onclick="window.BT.' + field + '.del(' + v.id + ')">&times;</span><span class="minus" onclick="window.BT.' + field + '.minus(' + v.id + ')">-</span><span class="plus" onclick="window.BT.' + field + '.plus(' + v.id + ')">+</span><i>' + v.num + '</i></li>');
-					});
-				};
+
+				this.done = function(id, info, title) {
+					window.BT.dlg('close', 'bt-view');
+
+					if (id > 0) {
+						window.BT.call({
+							function: 'add',
+							id: id,
+							ptu: window.BT.ptu,
+							pid: window.BT.pid,
+							tid: window.BT.tid,
+							uid: window.BT.uid,
+							type: this.type,
+							linked_type: this.linked_type,
+							search_type: this.search_type,
+							title: title,
+							extra: window.BT.extra,
+							info: info
+						}, function(r) {
+							window.location.reload(true);
+						});
+					}
+				}
 			}
 
 			jQuery(function($) {
 				const plugin = basic_types;
-
 				window.BT = {
+					ptu: '<?php echo $ptu; ?>',
+					pid: '<?php echo ($ptu == 'post') ? ($_GET['post'] ?? 0) : 0; ?>',
+					tid: '<?php echo ($ptu == 'term') ? ($_GET['tag_ID'] ?? 0) : 0; ?>',
+					uid: '<?php echo ($ptu == 'user') ? ($_GET['user_id'] ?? 0) : 0; ?>',
 					sub: <?php echo (get_option('uploads_use_yearmonth_folders')) ? 1 : 0; ?>,
+					extra: <?php echo $extra; ?>,
 					dlg: function(action, id) {
 						let d = document.getElementById(id);
 						if (action == 'open') {
@@ -1993,14 +2739,27 @@ HTML;
 						.then(function(r) {
 							f(r);
 						});
-					}
-					,
+					},
+					call: function(args, f) {
+						$.ajax({
+							method: 'GET',
+							url: plugin.api.call,
+							beforeSend: function(xhr) {
+								xhr.setRequestHeader('X-WP-Nonce', plugin.api.nonce);
+							},
+							data: args
+						})
+						.then(function(r) {
+							f(r);
+						});
+					},
 					e64: function(str) {
 						return btoa(unescape(encodeURIComponent(str)));
 					},
 					d64: function(str) {
 						return decodeURIComponent(escape(atob(str)));
- 					}
+					},
+					sales: {}
 				};
 
 				var mediaUploader, bid;
@@ -2044,19 +2803,33 @@ HTML;
 <?php
 	}
 
+
+	//     ▄████████   ▄█      ▄████████   ▄█        ████████▄      ▄████████  
+	//    ███    ███  ███     ███    ███  ███        ███   ▀███    ███    ███  
+	//    ███    █▀   ███▌    ███    █▀   ███        ███    ███    ███    █▀   
+	//   ▄███▄▄▄      ███▌   ▄███▄▄▄      ███        ███    ███    ███         
+	//  ▀▀███▀▀▀      ███▌  ▀▀███▀▀▀      ███        ███    ███  ▀███████████  
+	//    ███         ███     ███    █▄   ███        ███    ███           ███  
+	//    ███         ███     ███    ███  ███▌    ▄  ███   ▄███     ▄█    ███  
+	//    ███         █▀      ██████████  █████▄▄██  ████████▀    ▄████████▀
+
 	public static function gen_fields($what, $type, $field, $fval, $keys) {
+		global $pagenow;
+
+		$user = wp_get_current_user();
+		$role = get_role($user->roles[0])->name;
+
 		$fid = self::$def['prefix'] . '_' . $type . '_' . $field;
 		$fname = self::prefix($type) . $field;
-
-		$post_id = $_GET['post'] ?? null;
+		$oid = self::get_current_id($what);
 
 		$override = apply_filters(self::$def['prefix'] . '_add_post_fields', false, $what, $type, $field, $fval, $keys);
 
 		if ($override) {
-			$overridden = (!is_array($override)) ? [$override] : $override;
+			$overridden = (!is_array($override)) ? [] : $override;
 
 			if (count($overridden) > 0) {
-				foreach ($overridden as $o) {
+				foreach ($overridden['fields'] as $o) {
 					echo '<div class="field-title">';
 						echo '<label>' . $o['label'] . ':</label>';
 						echo '<span class="desc">' . $o['description'] . '</span>';
@@ -2066,6 +2839,8 @@ HTML;
 						echo $o['value'];
 					echo '</div>';
 				}
+
+				echo '<script>' . $overridden['script'] . '</script>';
 			}
 
 			return;
@@ -2097,9 +2872,32 @@ HTML;
 					}
 				}
 				else {
-					// view linked record of 'type'
+					if (isset($keys['multi']) && $keys['multi'] == true) {
+						// view list of records of 'type'
 
-					echo '<input type="text" readonly id="linked_' . $keys['linked'] . '" value="' . (($fval != '') ? $fval : 'N/A') . '" style="width:99%">';
+						if ($oid) {
+							$posts = self::find_posts($keys['linked'], [
+								$type . '_id' => $oid
+							], []);
+						}
+						else {
+							$posts = false;
+						}
+
+						if (is_array($posts) && count($posts) > 0) {
+							foreach ($posts as $post) {
+								echo '<p><a href="' . admin_url() . 'post.php?post=' . $post->ID . '&action=edit">' . $post->post_title . '</a></p>';
+							}
+						}
+						else {
+							echo '<p>There are no ' . self::label($keys['linked'], true, false) . ' on this delivery.</p>';
+						}
+					}
+					else {
+						// view linked record of 'type'
+
+						echo '<input type="text" readonly id="linked_' . $keys['linked'] . '" value="' . (($fval != '') ? $fval : 'N/A') . '" style="width:99%">';						
+					}
 				}
 
 				echo '</div>';
@@ -2112,7 +2910,7 @@ HTML;
 				switch ($keys['type']) {
 					case 'select': {
 						// this field needs a select box
-						$field_id = self::$def['prefix'] . '_' . $type . '_' . $field;
+						$field_id = self::$def['prefix'] . '_' . $type . '_' . $field . '_select';
 ?>
 				<div class="field-title">
 					<label><?php echo $keys['label']; ?>:</label>
@@ -2126,7 +2924,7 @@ HTML;
 					if ($keys['linked'] == 'user') {
 						// list all linked users
 
-						$roles = (strpos($keys['role'], ',') === true) ? explode(',', $keys['role']) : [$keys['role']];
+						$roles = strpos($keys['role'], ',') ? explode(',', $keys['role']) : [$keys['role']];
 						$role = (isset($keys['role'])) ? ['role__in' => $roles] : null;
 						$users = get_users($role);
 
@@ -2141,7 +2939,7 @@ HTML;
 					else {
 						// list all linked records of 'type'
 
-						$loop = get_posts([
+						$posts = get_posts([
 							'post_type' => $keys['linked'],
 							'post_status' => 'publish',
 							'posts_per_page' => -1,
@@ -2149,8 +2947,8 @@ HTML;
 							'order' => 'ASC'
 						]);
 
-						if (count($loop) > 0) {
-							foreach ($loop as $post) {
+						if (count($posts) > 0) {
+							foreach ($posts as $post) {
 								$id = $post->ID;
 								$selected = ($id == $fval) ? ' selected' : '';
 								if ($post->post_title != 'Auto Draft') {
@@ -2165,7 +2963,7 @@ HTML;
 
 				<script>
 					var <?php echo $field; ?>_select = $('#<?php echo $field_id; ?>');
-					var <?php echo $field; ?>_input = $('#<?php echo self::$def['prefix']; ?>_<?php echo $type; ?>_<?php echo $field; ?>');
+					var <?php echo $field; ?>_input = $('#<?php echo $fid; ?>');
 					<?php echo $field; ?>_select.on('change', function() {
 						<?php echo $field; ?>_input.val($(this).val());
 					});
@@ -2202,7 +3000,7 @@ HTML;
 							}
 						}
 						else {
-							$loop = get_posts([
+							$posts = get_posts([
 								'post_type' => $keys['linked'],
 								'post_status' => 'publish',
 								'posts_per_page' => -1,
@@ -2210,8 +3008,8 @@ HTML;
 								'order' => 'ASC'
 							]);
 
-							if (count($loop) > 0) {
-								foreach ($loop as $post) {
+							if (count($posts) > 0) {
+								foreach ($posts as $post) {
 									$id = $post->ID;
 									$checked = in_array($id, $fval) ? ' checked' : '';
 									if ($post->post_title != 'Auto Draft') {
@@ -2250,6 +3048,8 @@ HTML;
 		else {
 			// this is a data field
 
+			$new = ($pagenow == 'post-new.php' || ($pagenow == 'edit-tags.php' && isset($_GET['action']) && $_GET['action'] == 'new'));
+
 			echo '<div class="field-title">';
 
 			switch ($keys['type']) {
@@ -2260,10 +3060,15 @@ HTML;
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<select id="' . $fid . '" name="' . $fname . '" style="width:99%">';
+						echo '<select id="' . $fid . '" name="' . $fname . '" style="width:100%">';
 							echo '<option value="">Select ' . $keys['label'] . '&hellip;</option>';
 							foreach ($keys['values'] as $value => $label) {
-								$selected = ($fval == $value || $value == $keys['default']) ? ' selected' : '';
+								if ($new && isset($keys['default'])) {
+									$selected = ($value == $keys['default']) ? ' selected' : '';
+								}
+								else {
+									$selected = ($fval == $value) ? ' selected' : '';
+								}
 								echo '<option value="' . $value . '"' . $selected . '>' . $label . '</option>';
 							}
 						echo '</select>';
@@ -2321,7 +3126,7 @@ HTML;
 						if ($fval == '') {
 							$fval = $keys['default'] ?? $fval;
 						}
-						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:100%">';
 					break;
 				}
 				case 'calc': {
@@ -2332,15 +3137,26 @@ HTML;
 					echo '</div>';
 					echo '<div class="field-edit">';
 						$calc = $keys['calc'] ?? null;
-						$data = ($post_id) ? self::get_all($post_id) : null;
+						$data = ($oid) ? self::get_all($what, $oid) : null;
 						if ($data && $calc) {
 							foreach ($data as $f => $v) {
-								$var = '_' . $f;
-								$$var = (float)$v;
+								$field = str_replace(self::prefix($type), '', $f);
+								$var = '_' . $field;
+
+								if ($v[0] == '') {
+									$v[0] = self::get_default($what, $type, $field);
+								}
+
+								$$var = (is_numeric($v)) ? (float)$v[0] : $v[0];
 							}
+
+							@eval('$out =' . $calc . ';');
+							$out = number_format($out, 2);
 						}
-						@eval('$out =' . $calc . ';');
-						echo '<input type="text" readonly value="' . $out . '" style="width:99%">';
+						else {
+							$out = '';
+						}
+						echo '<input type="text" readonly value="' . $out . '" style="width:100%">';
 					break;
 				}
 				case 'barcode': {
@@ -2372,7 +3188,7 @@ HTML;
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<input type="text" value="' . $post_id . '" readonly style="width:99%">';
+						echo '<input type="text" value="' . $oid . '" readonly style="width:100%">';
 					break;
 				}
 				case 'number': {
@@ -2381,6 +3197,9 @@ HTML;
 						echo '</label>';
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
+					if ($new) {
+						$fval = $keys['default'] ?? '';
+					}
 					$step = (isset($keys['step'])) ? ' step="' . $keys['step'] . '"' : '';
 					$min = (isset($keys['min'])) ? ' min="' . $keys['min'] . '"' : '';
 					$max = (isset($keys['max'])) ? ' max="' . $keys['max'] . '"' : '';
@@ -2395,8 +3214,8 @@ HTML;
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<a data-id="' . $fid . '" href="mailto:' . $fval . '" class="button-primary email-button" style="width:5%"><i class="fa-solid fa-at"></i></a>';
-						echo '<input type="email" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:93%">';
+						echo '<a data-id="' . $fid . '" href="mailto:' . $fval . '" class="button-primary email-button"><i class="fa-solid fa-at"></i></a>';
+						echo '<input type="email" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:calc(100% - 65px)">';
 					break;
 				}
 				case 'website': {
@@ -2406,8 +3225,8 @@ HTML;
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<a data-id="' . $fid . '" href="' . $fval . '" class="button-primary website-button" style="width:5%" target="_blank"><i class="fa-solid fa-globe"></i></a>';
-						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:93%">';
+						echo '<a data-id="' . $fid . '" href="' . $fval . '" class="button-primary website-button" target="_blank"><i class="fa-solid fa-globe"></i></a>';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" style="width:calc(100% - 65px)">';
 					break;
 				}
 				case 'display': {
@@ -2417,11 +3236,11 @@ HTML;
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" readonly style="width:99%">';
+						echo '<input type="text" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '" readonly style="width:100%">';
 					break;
 				}
 				case 'date': {
-					if ($fval == '' && $keys['default'] != '') {
+					if ($fval == '' && (isset($keys['default'])) && $keys['default'] != '') {
 						if ($keys['default'] == 'now') {
 							$fval = date('Y-m-d');
 						}
@@ -2435,7 +3254,55 @@ HTML;
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<input type="date" id="' . $fid . '" class="date" name="' . $fname . '" value="' . $fval . '" style="width:99%">';
+						echo '<input type="date" id="' . $fid . '" class="date" name="' . $fname . '" value="' . $fval . '" style="width:100%">';
+					break;
+				}
+				case 'week': {
+					if ($fval == '' && (isset($keys['default'])) && $keys['default'] != '') {
+						$fval = $keys['default'];
+					}
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<select id="' . $fid . '" name="' . $fname . '" style="width:100%">';
+							echo '<option value="-1">Select Week Commencing Date&hellip;</option>';
+							for ($i = 0; $i < 52; $i++) {
+								$date = date('d-m-Y', strtotime('monday 4 weeks ago + ' . ($i * 7) . ' days'));
+								$selected = ($fval == $date) ? ' selected' : '';
+								echo '<option value="' . $date . '"' . $selected . '>' . $date . '</option>';
+							}
+						echo '</select>';
+					break;
+				}
+				case 'day': {
+					if ($fval == '' && (isset($keys['default'])) && $keys['default'] != '') {
+						$fval = $keys['default'];
+					}
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<select id="' . $fid . '" name="' . $fname . '" style="width:100%">';
+							echo '<option value="-1">Select Day&hellip;</option>';
+							$days = [
+								'Monday',
+								'Tuesday',
+								'Wednesday',
+								'Thursday',
+								'Friday',
+								'Saturday',
+								'Sunday'
+							];
+							for ($i = 0; $i < count($days); $i++) {
+								$selected = ($fval == $i) ? ' selected' : '';
+								echo '<option value="' . $i . '"' . $selected . '>' . $days[$i] . '</option>';
+							}
+						echo '</select>';
 					break;
 				}
 				case 'text': {
@@ -2446,7 +3313,7 @@ HTML;
 					echo '</div>';
 					$height = (isset($keys['height'])) ? ';height:' . $keys['height'] : '';
 					echo '<div class="field-edit">';
-						echo '<textarea id="' . $fid . '" class="tabs" name="' . $fname . '" style="width:99%' . $height . '">' . $fval . '</textarea>';
+						echo '<textarea id="' . $fid . '" class="tabs" name="' . $fname . '" style="width:100%' . $height . '">' . $fval . '</textarea>';
 					break;
 				}
 				case 'code': {
@@ -2481,9 +3348,9 @@ HTML;
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<button data-id="' . $fid . '" class="button-primary choose-file-button" style="width:5%"><i class="fa-solid fa-file" title="Select"></i></button>';
-						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:89%">';
-						echo '<button id="preview-' . $fid . '" data-id="' . $fid . '" class="button-primary view-file-button" style="width:5%" title="Preview"><i class="fa-solid fa-eye"></i></button>';
+						echo '<button data-id="' . $fid . '" class="button-primary choose-file-button"><i class="fa-solid fa-file" title="Select"></i></button>';
+						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $fval . '" style="width:calc(100% - 130px)">';
+						echo '<button id="preview-' . $fid . '" data-id="' . $fid . '" class="button-primary view-file-button" title="Preview"><i class="fa-solid fa-eye"></i></button>';
 						echo '<script>';
 							echo '$("#preview-' . $fid . '").on("click", function(e) {';
 								echo 'window.open("' . wp_get_upload_dir()['url'] . '/' . $fval . '", "_blank").focus();';
@@ -2502,7 +3369,7 @@ HTML;
 					echo '</div>';
 					echo '<div class="field-edit">';
 						echo '<input id="colour-' . $fid . '" data-id="' . $fid . '" type="color" class="choose-colour-button" value="' . $colour . '">';
-						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $colour . '" style="width:93%">';
+						echo '<input id="' . $fid . '" type="text" name="' . $fname . '" value="' . $colour . '" style="width:calc(100% - 65px)">';
 						echo '<script>';
 							echo '$("#' . $fid . '").on("change", function() {';
 								echo '$("#colour-' . $fid . '").val($("#' . $fid . '").val());';
@@ -2531,6 +3398,21 @@ HTML;
 								echo '$("#' . $fid . '").prop("checked", true);';
 							echo '}';
 						echo '</script>';
+					break;
+				}
+				case 'flag': {
+					if ($fval == '' && (isset($keys['default'])) && $keys['default'] != '') {
+						$fval = $keys['default'];
+					}
+						echo '<em>' . $keys['label'] . ':</em>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo str_replace(
+							['[[class]]', '[[value]]'],
+							['class="' . str_replace('_' . strtolower(__CLASS__) . '_', '', $fname) . '-' . $fval . '"', $fval],
+							$keys['html']
+						);
 					break;
 				}
 				case 'page': {
@@ -2571,19 +3453,36 @@ HTML;
 						echo '</a>';
 					break;
 				}
-				case 'gallery': {
-							echo '<label for="' . $fid . '">';
-							echo $keys['label'] . ':';
-						echo '</label>';
+				case 'document': {
+						echo '<em>' . $keys['label'] . ':</em>';
 						echo '<span class="desc">' . $keys['description'] . '</span>';
 					echo '</div>';
 					echo '<div class="field-edit">';
-						echo '<input class="bt-gallery" type="hidden" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">';
-						echo '<div class="button button-primary choose-file-button plus-button" data-id="' . $fid . '">+</div>';
-						echo '<ul class="bt-gallery-images" id="' . $fid . '_gallery"></ul>';
-						echo '<script>';
-							echo 'var g = new gallery("' . $fid . '"); g.gen(); window.BT.' . $fid . ' = g;';
-						echo '</script>';
+						echo '<a class="button button-primary" style="margin-top:10px" href="' . wp_upload_dir()['baseurl'] . '/' . $fval . '" target="_blank">';
+							echo $keys['label'];
+						echo '</a>';
+					break;
+				}
+				case 'gallery': {
+					$html = <<<HTML
+						<label for="{$fid}">
+							{$keys['label']}:
+						</label>
+						<span class="desc">{$keys['description']}</span>
+					</div>
+					<div class="field-edit">
+						<input class="bt-gallery" type="hidden" id="{$fid}" name="{$fname}" value="{$fval}">
+						<div class="button button-primary choose-file-button plus-button" data-id="{$fid}">+</div>
+						<ul class="bt-gallery-images" id="{$fid}_gallery"></ul>
+						<script>
+							jQuery(function($) {
+								var g = new gallery('{$fid}');
+								g.gen();
+								window.BT.{$fid} = g;
+							});
+						</script>
+HTML;					
+					echo $html;
 					break;
 				}
 				case 'list': {
@@ -2644,7 +3543,77 @@ HTML;
 						echo '</script>';
 					break;
 				}
-				case 'multi-list': {
+				case 'items': {
+					echo '<link rel="stylesheet" href="https://cdn.datatables.net/2.3.4/css/dataTables.dataTables.css">';
+					echo '<script src="https://cdn.datatables.net/2.3.4/js/dataTables.js"></script>';
+
+					$sc = json_encode($keys['search_columns']);
+					$lc = json_encode($keys['linked_columns']);
+
+					$headings = '';
+					$items = '';
+
+					$posts = self::find_posts($keys['linked_type'], [
+						$type . '_id' => $oid
+					], ['orderby' => 'date', 'order' => 'ASC']);
+
+					$calc = '';
+					$update = '';
+
+					if ($posts && count($posts) > 0) {
+						foreach ($posts as $p) {
+							if (count($keys['linked_columns']) > 0) {
+								$items .= '<tr data-id="' . $p->ID . '" class="data">';
+
+								foreach ($keys['linked_columns'] as $key => $value) {
+									if ($key == 'title') {
+										$data = $p->post_title;
+									}
+									else {
+										$data = self::get('post', $p->ID, $key);
+									}
+
+									if (isset($value['edit'])) {
+										$class = (isset($value['class'])) ? ' ' . $value['class'] : '';
+										$cell = '<input type="text" id="' . $key . '-' . $p->ID . '" data-field="' . $key . '" data-id="' . $p->ID . '" class="td-edit' . $class . '" value="' . $data . '" placeholder=" ">';
+									}
+									else {
+										if (isset($value['calc'])) {
+											$calc = $value['calc'];
+											$update = $value['update'] ?? '';
+											$cell = '<input type="text" readonly id="' . $key . '-' . $p->ID . '" value="">';
+										}
+										else {
+											if (isset($value['select'])) {
+												$cell = '';
+												if (function_exists('bt_list_select')) {
+													$cell = bt_list_select($oid, $key, $p->ID, $data);
+												}
+											}
+											else {
+												$cell = '<input type="text" readonly value="' . $data . '">';
+											}
+										}
+									}
+									
+									$items .= '<td class="' . $key . '">' . $cell . '</td>';
+								}
+
+								$items .= '<td><span class="button-primary delete" data-id="' . $p->ID . '"><i class="fa-solid fa-trash-xmark"></i></td></tr>';
+							}
+						}
+
+						if (count($keys['linked_columns']) > 0) {
+							$headings .= '<tr>';
+
+							foreach ($keys['linked_columns'] as $key => $value) {
+								$width = (isset($value['width'])) ? ' style="width:' . $value['width'] . '"' : '';
+								$headings .= '<th' . $width . '>' . $value['label'] . '</th>';
+							}
+
+							$headings .= '<th style="width:2%"></th></tr>';
+						}
+					}
 					$html = <<<HTML
 						<label for="{$fid}">
 							{$keys['label']}:
@@ -2654,17 +3623,284 @@ HTML;
 					<div class="field-edit">
 						<input class="bt-list" type="hidden" id="{$fid}" name="{$fname}" value="{$fval}">
 						<div class="button button-primary choose-item-button plus-button" data-id="{$fid}">+</div>
-						<ul class="bt-list-items" id="{$fid}_list"></ul>
+						<br>
+						<table class="bt-items" id="{$fid}_list">
+							{$headings}
+							{$items}
+						</table>
 						<script>
 							jQuery(function($) {
-								var m = new multi('{$fid}', '{$keys['linked_type']}'); m.gen(); window.BT.{$fid} = m;
+								function recalc(id) {
+									var rows = $('#' + id + '_list tr.data');
+									$.each(rows, function(i, v) {
+										{$calc}
+										{$update}
+										window.BT.call({
+											function: 'update',
+											info: info
+										}, function(r) {
+											//console.log(r);
+											if (r.status == 'success') {
+												//alert('recalc success');
+												//window.location.reload(true);
+											}
+											else {
+												alert('recalc error');
+												//window.location.reload(true);
+											}
+										});
+									});
+								}
+								function update(id, f, v) {
+									window.BT.call({
+										function: 'update',
+										info: {
+											'type': 'order_item',
+											'id': id,
+											[f]: v
+										}
+									}, function(r) {
+										//console.log(r);
+										if (r.status == 'success') {
+											//alert('update success');
+											//window.location.reload(true);
+										}
+										else {
+											alert('update error');
+											//window.location.reload(true);
+										}
+									});
+								}
+								$('#{$fid}_list').on('focus', '.expand', function() {
+									const i = $(this);
+									const r = i.closest('tr');
+									const c = i.closest('td');
+									const t = r.children('td').length;
+									r.children('td').not(c).hide();
+									c.attr('colspan', t);
+									i.addClass('expanded');
+									setTimeout(() => {
+										const len = this.value.length;
+										this.setSelectionRange(len, len);
+									}, 0);
+								});
+								$('#{$fid}_list').on('blur', '.expand', function() {
+									const i = $(this);
+									const c = i.closest('td');
+									const r = i.closest('tr');
+									r.children('td').show();
+									c.removeAttr('colspan');
+									i.removeClass('expanded');
+									update($(this).data('id'), $(this).data('field'), $(this).val());
+								});
+								var i = new items('{$fid}', '{$type}','{$keys['search_type']}', '{$keys['linked_type']}', {$sc}, {$lc});
+								window.BT.{$fid} = i;
 								$('.choose-item-button[data-id="{$fid}"]').on('click', function(e) {
 									window.BT.{$fid}.dlg();
 								});
+								$('.recalc').on('change', function(e) {
+									recalc('{$fid}');
+								});
+								$('.update').on('change', function(e) {
+									update($(this).parent().parent().data('id'), $(this).data('field'), $(this).val());
+								});
+								$('tr.data .delete').on('click', function(e) {
+									window.BT.call({
+										function: 'delete',
+										info: {
+											type: '{$type}',
+											id: $(this).data('id')
+										}
+									}, function(r) {
+										if (r.status == 'success') {
+											window.location.reload(true);
+										}
+										else {
+											alert('There was an error :(');
+										}
+									});
+								});
+								recalc('{$fid}');
 							});
 						</script>
 HTML;
 					echo $html;
+					break;
+				}
+				case 'array': {
+					$input = $keys['input'] ?? 'input';
+						echo '<label for="' . $fid . '">';
+							echo $keys['label'] . ':';
+						echo '</label>';
+						echo '<span class="desc">' . $keys['description'] . '</span>';
+					echo '</div>';
+					echo '<div class="field-edit">';
+						echo '<textarea class="bt-array hidden" id="' . $fid . '" name="' . $fname . '">' . $fval . '</textarea>';
+						echo '<div class="button button-primary array-button plus-button" data-id="' . $fid . '">+</div>';
+						echo '<div class="bt-array-holder" id="' . $fid . '-holder">';
+						$array = json_decode($fval);
+						if (is_array($array) && count($array) > 0) {
+							foreach ($array as $item) {
+								switch ($input) {
+									case 'text': {
+										echo '<textarea class="array-item">' . $item . '</textarea>';
+										break;
+									}
+									case 'input': {
+										echo '<input type="text" class="array-item" value="' . $item . '">';
+										break;
+									}
+								}
+							}
+						}
+						echo '</div>';
+
+					$script = <<<JS
+						jQuery(function($) {
+							function update_{$fid}() {
+								$(document).off('change', '.array-item');
+								$(document).on('change', '.array-item', function(e) {
+									let a = [];
+									$('.array-item').each(function() {
+										let v = $(this).val();
+										if (v) {
+											a.push(v);											
+										}
+									});
+									$('#{$fid}').val(JSON.stringify(a));
+								});
+							}
+							$('.array-button').on('click', function() {
+								let h = $('#{$fid}-holder');
+								let n = h.children().length;
+								switch ('{$input}') {
+									case 'text': {
+										h.append('<textarea class="array-item"></textarea>');
+										break;
+									}
+									case 'input': {
+										h.append('<input type="text" class="array-item" value="">');
+										break;
+									}
+								}
+								update_{$fid}();
+							});
+							update_{$fid}();
+						});
+					JS;
+
+					echo '<script>' . $script . '</script>';
+
+					break;
+				}
+				case 'term_values': {
+					$html = <<<HTML
+						<label for="{$fid}">
+							{$keys['label']}:
+						</label>
+						<span class="desc">{$keys['description']}</span>
+					</div>
+					<div class="field-edit">
+					HTML;
+
+					$values = array_column(array_map(fn($x) => explode('=', $x, 2), explode(',', $fval)), 1, 0);
+
+					switch ($what) {
+						case 'post': {
+							$terms = get_the_terms($oid, $keys['taxonomy']);
+
+							break;
+						}
+						case 'taxonomy': {
+							$terms = [];
+							$all_terms = self::get_terms($keys['taxonomy']);
+							$term_ids = explode(',', get_term_meta($oid, self::prefix($type) . $keys['taxonomy'], true));
+							$unset = [];
+
+							foreach ($values as $tid => $value) {
+								if (!in_array($tid, $term_ids)) {
+									$unset[] = $tid;
+								}
+							}
+
+							if (count($unset) > 0) {
+								foreach ($unset as $tid) {
+									unset($values[$tid]);
+								}
+
+								$fval = implode(',', array_map(fn($id, $val) => "$id=$val", array_keys($values), $values));
+							}
+
+							if (is_array($all_terms) && count($all_terms) > 0) {
+								foreach ($all_terms as $t) {
+									if (in_array($t->term_id, $term_ids)) {
+										$terms[] = ['id' => $t->term_id, 'title' => $t->name];
+									}
+								}
+							}
+
+							break;
+						}
+						case 'user': {
+							// to do - get user terms of the requested taxonomy
+							$terms = [];
+
+							break;
+						}
+					}
+
+					$input = $keys['input'] ?? 'text';
+					
+					if ($terms && count($terms) > 0) {
+						$table = '<ul>';
+
+						foreach ($terms as $term) {
+							$table .= '<li>';
+								$table .= '<label style="display:inline-block;margin:6px 15px 0 0;width:150px;text-align:right" for="term-' . $term['id'] . '">' . $term['title'] . ':</label>';
+
+							$value = $values[$term['id']] ?? null;
+
+							switch ($input) {
+								case 'number': {
+									$table .= '<input class="tv-edit" type="number" data-id="' . $term['id'] . '" id="term-' . $term['id'] . '" value="' . $value . '">';
+									break;
+								}
+								default: {
+									$table .= '<input class="tv-edit" type="text" data-id="' . $term['id'] . '" id="term-' . $term['id'] . '" value="' . $value . '">';
+								}
+							}
+
+							$table .= '</li>';
+						}
+
+						$table .= '</ul>';
+						$html .= '<input class="bt-values" type="hidden" id="' . $fid . '" name="' . $fname . '" value="' . $fval . '">' . $table;
+					}
+					else {
+						$html .= '<p><strong>No ' . self::label($keys['taxonomy'], true, false) . ' selected for this ' . $type . '</strong></p>';
+					}
+
+					$script = <<<JS
+						jQuery(function($) {
+							$('.tv-edit').on('change', function() {
+								const id = $(this).data('id');
+								let data = $('#{$fid}').val();
+								const pairs = (data == '') ? [] : data.split(',');
+								const values = Object.fromEntries(
+									pairs.map(p => {
+										const [id, val = ""] = p.split('=');
+										return [id, val];
+									})
+								);
+								values[id] = $(this).val();
+								let n = Object.entries(values).map(([id, val]) => id + '=' + val).join(',');
+								$('#{$fid}').val(n);
+							});
+						});
+					JS;
+
+					echo $html;
+					echo '<script>' . $script . '</script>';
 					break;
 				}
 			}
@@ -2683,7 +3919,9 @@ HTML;
 	//    ███         ███    ███     ▄█    ███      ███      
 	//   ▄████▀        ▀██████▀    ▄████████▀      ▄████▀
 
-	public static function add_metaboxes() {
+	public static function add_metaboxes($post_type, $post) {
+		global $wp_meta_boxes;
+
 		foreach (self::$posts as $type => $fields) {
 			add_meta_box(
 				strtolower(__CLASS__) . '_meta_box',
@@ -2691,6 +3929,94 @@ HTML;
 				__CLASS__ . '::post_metabox',
 				$type
 			);
+		}
+
+		$meta_box = apply_filters(strtolower(__CLASS__) . '_post_meta_box', []);
+
+		if (count($meta_box) > 0) {
+			foreach ($meta_box as $mb) {
+				$slug = sanitize_title($mb['title']);
+
+				add_meta_box(
+					strtolower(__CLASS__) . '_' . $slug,
+					$mb['title'],
+					function($post) use ($mb) {
+						echo $mb['content'];
+					},
+					$post_type,
+					'side',
+					'default'
+				);
+			}
+		}
+
+		$taxes = get_object_taxonomies($post_type, 'objects');
+
+		foreach ($taxes as $slug => $tax) {
+			if (!empty($tax->single_select ) && $tax->single_select === true) {
+				add_filter('postbox_classes_post_' . $slug . 'div', function($classes) {
+					$classes[] = 'radio-term';
+					return $classes;
+				});
+
+				if (isset($wp_meta_boxes[$post_type]['side']['core'][$slug . 'div'])) {
+					$wp_meta_boxes[$post_type]['side']['core'][$slug . 'div']['title'] = self::label($slug, false, true);
+				}
+
+				add_action('admin_head', function() use ($slug) {
+					$out = <<<HTML
+					<style>
+						#{$slug}checklist input[type="checkbox"] {
+							appearance: none;
+							border: 1px solid #777;
+							border-radius: 50%;
+							width: 14px;
+							height: 16px;
+							vertical-align: middle;
+							margin-right: 6px;
+							position: relative;
+						}
+						#{$slug}checklist input[type="checkbox"]:checked::before {
+							content: "";
+							position: absolute;
+							top: 4px;
+							left: 5px;
+							width: 12px;
+							height: 12px;
+							border-radius: 50%;
+							background: var(--primary-colour);
+						}
+					</style>
+					HTML;
+
+					echo $out;
+				});
+
+				add_action('admin_footer', function() use ($slug) {
+					$out = <<<HTML
+					<script>
+						jQuery(function($) {
+							const box = $('#{$slug}checklist');
+							if (!box.length) {
+								return;
+							}
+							box.on('change', 'input[type="checkbox"]', function() {
+								const clicked = $(this);
+								if (clicked.data('was-checked')) {
+									clicked.prop('checked', false).data('was-checked', false);
+									return;
+								}
+								box.find('input[type="checkbox"]').not(this).prop('checked', false).data('was-checked', false);
+								clicked.data('was-checked', true);
+							});
+							box.find('input[type="checkbox"]:checked').data('was-checked', true);
+						});
+					</script>
+					HTML;
+
+					echo $out;
+				});
+			}
 		}
 	}
 
@@ -2717,7 +4043,10 @@ HTML;
 		self::data_api();
 
 		self::gen_css();
-		self::gen_js();
+		self::gen_js('post');
+
+		$topx = ($new_post) ? 7 : 8;
+		echo '<style>.email-button,.website-button,.choose-item-button,.choose-file-button,.view-file-button{top:' . $topx . 'px !important;}</style>';
 ?>
 		<script>
 			jQuery(function($) {
@@ -2764,6 +4093,9 @@ HTML;
 <?php
 					$count++;
 				}
+				else {
+					$count++;
+				}
 			}
 		}
 ?>
@@ -2771,9 +4103,13 @@ HTML;
 <?php
 	}
 
-	// save posts data
+	// save post data
 
-	public static function save_postdata($post_id) {
+	public static function save_post_data($post_id) {
+		if (defined('DOING_AJAX') && DOING_AJAX) {
+			return;
+		}
+
 		$post = get_post($post_id);
 		$type = $post->post_type;
 
@@ -2784,10 +4120,19 @@ HTML;
 			if (count($fields)) {
 				foreach ($fields as $field => $value) {
 					if (array_key_exists($prefix . $field, $_POST)) {
+						$data = $_POST[$prefix . $field];
+
+						if (isset($keys['format']) && $keys['format'] == 'array') {
+							$array = self::is_json($data);
+							if ($array) {
+								$data = $array;
+							}
+						}
+
 						update_post_meta(
 							$post_id,
 							$prefix . $field,
-							$_POST[$prefix . $field]
+							$data
 						);
 					}
 				}
@@ -2810,6 +4155,11 @@ HTML;
 				return;
 			}
 
+			if (!isset($fields[$column_key])) {
+				echo apply_filters(strtolower(__CLASS__) . '_post_column_data', '', $column_key, $post_id, $type);
+				return;
+			}
+
 			foreach ($fields as $field => $keys) {
 				if (($field == $column_key) && !empty($keys['column'])) {
 					$meta_value = get_post_meta($post_id, $prefix . $field, true);
@@ -2818,12 +4168,29 @@ HTML;
 						case 'check': {
 							$yes = '<svg fill="#000000" height="18px" width="18px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 490 490"><polygon points="452.253,28.326 197.831,394.674 29.044,256.875 0,292.469 207.253,461.674 490,54.528 "></polygon></svg>';
 							$no = '<svg fill="#000000"  height="16px" width="16px" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><path d="M0 14.545L1.455 16 8 9.455 14.545 16 16 14.545 9.455 8 16 1.455 14.545 0 8 6.545 1.455 0 0 1.455 6.545 8z" fill-rule="evenodd"></path></svg>';
+
+							$yes = apply_filters(strtolower(__CLASS__) . '_post_column_yes', $yes, $column_key, $post_id, $type);
+							$no = apply_filters(strtolower(__CLASS__) . '_post_column_no', $no, $column_key, $post_id, $type);
+
 							echo ($meta_value == 'yes') ? $yes : $no;
 							break;
 						}
 						default: {
 							if (filter_var($meta_value, FILTER_VALIDATE_EMAIL)) {
 								$meta_value = '<a href="mailto:' . $meta_value . '">' . $meta_value . '</a>';
+							}
+
+							if (substr($column_key, -3) == '_id') {
+								if ($meta_value != '') {
+									$post = get_post((int)$meta_value);
+
+									if ($post) {
+										$meta_value = $post->post_title;
+									}
+								}
+								else {
+									$meta_value = '<em>—</em>';
+								}
 							}
 
 							if ($keys['type'] == 'file') {
@@ -2835,7 +4202,7 @@ HTML;
 								}
 							}
 							else {
-								$meta_value = apply_filters(strtolower(__CLASS__) . '_post_column_data', $meta_value, $column_key, $post_id);
+								$meta_value = apply_filters(strtolower(__CLASS__) . '_post_column_data', $meta_value, $column_key, $post_id, $type);
 							}
 
 							echo $meta_value;
@@ -2864,15 +4231,17 @@ HTML;
 				}
 			}
 			
-			$columns['date'] = 'Date';
+			if (isset($keys['date']) && $keys['date']) {
+				$columns['date'] = 'Date';
+			}
 		}
 
-		$columns = apply_filters(strtolower(__CLASS__) . '_post_column_title', $columns);
+		$columns = apply_filters(strtolower(__CLASS__) . '_post_column_title', $columns, $type);
 
 		return $columns;
 	}
 
-	public static function sort_post_column_query($query) {
+	public static function sort_posts($query) {
 		if (!is_admin() || !$query->is_main_query()) {
 			return;
 		}
@@ -2880,6 +4249,31 @@ HTML;
 		$type = $_GET['post_type'] ?? null;
 
 		if ($type && isset(self::$posts[$type])) {
+			if (!isset(self::$posts[$type]['sortable'])) {
+				return;
+			}
+
+			if (empty($_GET['orderby'])) {
+				$query->set('meta_query', [
+					'relation' => 'OR',
+					[
+						'key' => 'post_order',
+						'compare' => 'EXISTS',
+					],
+					[
+						'key' => 'post_order',
+						'compare' => 'NOT EXISTS',
+					]
+				]);
+
+				$query->set('orderby', [
+					'meta_value_num' => 'ASC',
+					'date' => 'DESC',
+				]);
+
+				return;
+			}
+
 			$orderby = $query->get('orderby');
 			$prefix = self::prefix($type);
 			$fields = self::get_meta_fields(self::$posts[$type]['sections']);
@@ -2919,6 +4313,60 @@ HTML;
 		return $columns;
 	}
 
+	public static function posts_meta_filter($query) {
+		if (!is_admin() || !$query->is_main_query()) {
+			return;
+		}
+
+		$type = $_GET['post_type'] ?? null;
+		$prefix = self::prefix($type);
+		$meta_query = [];
+
+		$fields = BT::fields('post', $type);
+		$filters = [];
+
+		if (count($fields) > 0) {
+			foreach ($fields as $f => $data) {
+				if (isset($data['filter']) && $data['filter']) {
+					$filters[] = $f;
+				}
+			}
+		}
+
+		if (count($filters) > 0) {
+			foreach ($filters as $f) {
+				if (!empty($_GET[$f . '_filter'])) {
+					$filter = $_GET[$f . '_filter'];
+					if ($filter != 'all') {
+						$meta_query[] = [
+							'key' => $prefix . $f,
+							'value' => sanitize_text_field($filter)
+						];
+					}
+				}
+			}
+
+			$query->set('meta_query', $meta_query);
+		}
+	}
+
+	public static function change_post_status_labels($views) {
+		$labels = [
+			'all' => 'Everything',
+			'publish' => 'Active',
+			'draft' => 'In Progress',
+			'trash' => 'Bin'
+		];
+
+		foreach ($labels as $key => $label) {
+			if (isset($views[$key])) {
+				$views[$key] = preg_replace('/>([^<]*)<span class="count">/', '>' . $label . '<span class="count">', $views[$key]);
+			}
+		}
+
+		return $views;
+	}
+
 	// add buttons to post list page
 
 	public static function post_list_buttons() {
@@ -2926,13 +4374,22 @@ HTML;
 
 		$type = isset($_GET['post_type']) ? $_GET['post_type'] : null;
 
-		if ($type && isset(self::$posts[$type])) {
+		if (self::is_dev()) {
+			$nuke = '<span id="nuke" class="page-title-action"><i class="fa-solid fa-trash-xmark"></i></span>';
+			self::data_api();
+		}
+		else {
+			$nuke = '';
+		}
+
+		if ($type && isset(self::$posts[$type]) && (_BT['bt_transfer'] == 'yes')) {
 			self::importer($type, 'post');
 ?>
 			<script>
 				jQuery(function($) {
+					const plugin = basic_types;
 					let e = $('.page-title-action');
-					let b = ' &nbsp; &nbsp; <a href="<?php echo get_admin_url() . 'admin.php?action=download&type=' . $type; ?>" class="page-title-action">Export <?php echo self::label($type); ?> as CSV</a> <input id="p-csv-f" type="file" class="hidden"><span id="p-csv" class="page-title-action">Import <?php echo self::label($type); ?></span><div class="progress">&nbsp;</div>';
+					let b = ' &nbsp; &nbsp; <a href="<?php echo get_admin_url() . 'admin.php?action=download&type=' . $type; ?>" class="page-title-action">Export <?php echo self::label($type); ?> as CSV</a> <input id="p-csv-f" type="file" class="hidden"><span id="p-csv" class="page-title-action">Import <?php echo self::label($type); ?></span><div class="progress">&nbsp;</div><?php echo $nuke; ?>';
 					e.addClass('primary').after(b);
 					$('#p-csv').on('click', function(e) {
 						$('#p-csv-f').click();
@@ -2940,7 +4397,38 @@ HTML;
 					$('#p-csv-f').on('change', function(e) {
 						bt_read($('#p-csv-f').prop('files')[0]);
 					});
-				});
+<?php
+		if (self::is_dev()) {
+?>
+					$('#nuke').on('click', function(e) {
+						var confirm = prompt('Type "nuke my <?php echo $type; ?> list" to confirm.');
+						if (confirm) {
+							$.ajax({
+								method: 'GET',
+								url: plugin.api.call,
+								beforeSend: function(xhr) {
+									xhr.setRequestHeader('X-WP-Nonce', plugin.api.nonce);
+								},
+								data: {
+									function: 'nuke',
+									type: 'post',
+									slug: '<?php echo $type; ?>',
+									confirm: confirm
+								}
+							})
+							.then(function(r) {
+								if (r.status == 'success') {
+									window.location.reload(true);
+								}
+								else {
+									alert('There was an error :(');
+								}
+							});
+						}
+					});
+<?php
+		}
+?>				});
 			</script>
 <?php
 		}
@@ -2970,7 +4458,11 @@ HTML;
 		}
 
 		if (isset(self::$posts[$type])) {
-			echo '<br><a class="button button-primary" href="/wp-admin/edit.php?post_type=' . $type . $paged . '">Back to ' . self::label($type) . ' List&hellip;</a><br><br>';
+			echo '<br>';
+			echo '<a class="button button-primary" href="/wp-admin/edit.php?post_type=' . $type . $paged . '">Back to ' . self::label($type) . ' List&hellip;</a>';
+
+			echo apply_filters(strtolower(__CLASS__) . '_extra_post_buttons', '', $type, $post);
+			echo '<br><br>';
 		}
 	}
 
@@ -3011,19 +4503,60 @@ HTML;
 			}
 		}
 
+		$fields = BT::fields('post', $type);
+		$filters = [];
+
+		if (count($fields) > 0) {
+			foreach ($fields as $f => $data) {
+				if (isset($data['filter']) && $data['filter']) {
+					$filters[] = $f;
+				}
+			}
+		}
+
+		if (count($filters) > 0) {
+			foreach ($filters as $f) {
+				$selected = isset($_GET[$f . '_filter']) ? $_GET[$f . '_filter'] : '';
+				$key = self::prefix($type) . $f;
+
+				global $wpdb;
+
+				$values = $wpdb->get_col("
+					SELECT DISTINCT meta_value 
+					FROM {$wpdb->postmeta}
+					WHERE meta_key = '{$key}'
+					ORDER BY meta_value ASC
+				");
+
+				echo '<select name="' . $f . '_filter" id="' . $f . '_filter">';
+					echo '<option value="all">All ' . self::label($f) . '</option>';
+
+					foreach ($values as $value) {
+						if ($value) {
+							printf('<option value="%s" %s>%s</option>', $value, selected($selected, $value, false), self::label($value, false, true));
+						}
+					}
+
+				echo '</select>';
+			}
+		}
+
 		// add our ajax search box
 
 		self::data_api();
 		$admin_url = get_admin_url();
 
+		$extra_script = apply_filters(strtolower(__CLASS__) . '_extra_posts_search', '', $type);
+
 		$html = <<<HTML
-			<input id="bt-search" type="search" value="" autocomplete="off" placeholder="Type 3 characters or more to search..." style="margin-left:50px;width:260px">
+			<input id="bt-search" type="search" value="" autocomplete="off" placeholder="Type 3 characters or more to search..." style="width:260px">
 			<script>
 				jQuery(function($) {
 					const plugin = basic_types;
-					const s = $('#bt-search');
+					const s = $('#bt-search').detach();
 					const o = $('#the-list').clone(true, true);
-					s.appendTo(s.parent());
+					$('#ajax-search').append(s);
+					//s.appendTo(s.parent());
 					const h = debounce(function(e) {
 						const t = $('#the-list');
 						if (s.val().length > 2) {
@@ -3034,10 +4567,9 @@ HTML;
 									xhr.setRequestHeader('X-WP-Nonce', plugin.api.nonce);
 								},
 								data: {
+									ptu: 'post',
 									type: '{$type}',
 									search: s.val(),
-									page: 1,
-									per: 50,
 									status: 'any'
 								}
 							})
@@ -3045,17 +4577,18 @@ HTML;
 								let tr = $('#the-list tr:first').clone();
 								tr.find('th, td').text('');
 								t.empty();
-								if (r.total == 0) {
+								if (Object.keys(r).length == 0) {
 									var nr = tr.clone();
 									nr.attr('id', 'no-posts');
 									nr.find('.title').html('<strong>Nothing found</strong>');
 									t.append(nr);
 								}
 								else {
-									r.results.forEach(function(result) {
+									r.forEach(function(result) {
 										var nr = tr.clone();
 										nr.attr('id', 'post-' + result.id);
 										nr.find('.title').html('<strong><a class="row-title" href="{$admin_url}post.php?post=' + result.id + '&amp;action=edit" aria-label="“' + result.title + '” (Edit)">' + result.title + '</a></strong>');
+										{$extra_script}
 										t.append(nr);
 									});
 								}
@@ -3065,7 +4598,13 @@ HTML;
 							t.replaceWith(o.clone(true, true));
 						}
 					}, 300);
-					s.on('keyup', h);
+					if ($('#the-list .no-items').length) {
+						s.hide();
+						$('#post-query-submit').hide();
+					}
+					else {
+						s.on('keyup', h);
+					}
 				});
 			</script>
 HTML;
@@ -3106,15 +4645,22 @@ HTML;
 			return;
 		}
 
-		$taxes = get_object_taxonomies($typenow, 'names');
+		$taxes = get_object_taxonomies($typenow, 'objects');
 
 		if (count($taxes) > 0) {
 			echo '<script>jQuery(function($) {';
 
 			foreach ($taxes as $tax) {
-				$id = isset($_GET[$tax]) ? intval($_GET[$tax]) : 0;
+				$id = isset($_GET[$tax->name]) ? intval($_GET[$tax->name]) : 0;
 				if ($id) {
-					echo '$("#in-' . $tax . '-' . $id . '-2").prop("checked", true);';
+					if (!empty($tax->single_select ) && $tax->single_select === true) {
+						echo '$("#rd-' . $tax->name . '-' . $id . '").prop("checked", true);';
+						echo 'document.getElementById("rd-' . $tax->name . '-' . $id . '").scrollIntoView(true);';
+					}
+					else {
+						echo '$("#in-' . $tax->name . '-' . $id . '-2").prop("checked", true);';
+						echo 'document.getElementById("in-' . $tax->name . '-' . $id . '-1").scrollIntoView(true);';
+					}
 				}
 			}
 
@@ -3221,26 +4767,26 @@ HTML;
 
 			if (count($taxonomies) > 0) {
 				foreach ($taxonomies as $category) {
-					$label = self::label($category);
+					$tax_label = self::label($category);
 ?>
 						<div id="<?php echo $category; ?>div" class="postbox">
 							<div class="postbox-header">
-								<h2 class="hndle ui-sortable-handle"><?php echo $label; ?></h2>
+								<h2 class="hndle ui-sortable-handle"><?php echo $tax_label; ?></h2>
 								<div class="handle-actions hide-if-no-js"></div>
 							</div>
 							<div class="inside">
 								<div id="taxonomy-<?php echo $category; ?>" class="categorydiv">
 									<ul id="<?php echo $category; ?>-tabs" class="category-tabs">
-										<li class="tabs"><a href="#<?php echo $category; ?>-all">All <?php echo $label; ?></a></li>
+										<li class="tabs"><a href="#<?php echo $category; ?>-all">All <?php echo $tax_label; ?></a></li>
 									</ul>
 									<div id="<?php echo $category; ?>-all" class="tabs-panel">
 										<input type="hidden" name="tax_input[<?php echo $category; ?>][]" value="0">
 										<ul id="<?php echo $category; ?>checklist" data-wp-lists="list:<?php echo $category; ?>" class="categorychecklist form-no-clear">
 <?php
 					$terms = self::get_terms($category);
-					$term_ids = explode(',', get_term_meta($term->term_id, $prefix . $category, true));
+					$term_ids = (is_string($term)) ? [] : explode(',', get_term_meta($term->term_id, $prefix . $category, true));
 
-					if (count($terms) > 0) {
+					if (is_array($terms) && count($terms) > 0) {
 						foreach ($terms as $t) {
 							$checked = (in_array($t->term_id, $term_ids)) ? ' checked="checked"' : '';
 ?>
@@ -3282,7 +4828,7 @@ HTML;
 			$a = ($action == 'new') ? 'right' : 'left';
 			$b = ($action == 'new') ? 'left' : 'right';
 
-			echo '<style>#col-' . $a . '{display:none}#col-' . $b . '{width:100%}#titlediv #tag-name{padding:3px 8px;font-size:1.7em;line-height:100%;height:1.7em;width:100%;outline: 0;margin:0 0 3px;background-color:#fff}</style>';
+			echo '<style>#col-' . $a . '{display:none;width:0}#col-' . $b . '{width:100%}#titlediv #tag-name{padding:3px 8px;font-size:1.7em;line-height:100%;height:1.7em;width:100%;outline:0;margin:0 0 3px;background-color:#fff}.email-button,.website-button,.choose-item-button,.choose-file-button,.view-file-button{top:7px !important;}.slider:before{bottom:5px !important;}</style>';
 		}
 		else {
 			// editing existing term
@@ -3304,7 +4850,7 @@ HTML;
 			$desc_element = ($action == 'new') ? 'tag-description' : 'description';
 
 			self::gen_css();
-			self::gen_js();
+			self::gen_js('term');
 ?>
 							<script>
 								$(function() {
@@ -3422,7 +4968,13 @@ HTML;
 		}
 	}
 
-	public static function save_taxonomy_fields($term_id, $tt_id, $taxonomy) {
+	// save taxonomy term data
+
+	public static function save_taxonomy_data($term_id, $tt_id, $taxonomy) {
+		if (defined('DOING_AJAX') && DOING_AJAX) {
+			return;
+		}
+
 		$type = $taxonomy['taxonomy'];
 
 		if (array_key_exists($type, self::$taxes)) {
@@ -3432,10 +4984,19 @@ HTML;
 			if (count($fields)) {
 				foreach ($fields as $field => $value) {
 					if (array_key_exists($prefix . $field, $_POST)) {
+						$data = $_POST[$prefix . $field];
+
+						if (isset($keys['format']) && $keys['format'] == 'array') {
+							$array = self::is_json($data);
+							if ($array) {
+								$data = $array;
+							}
+						}
+
 						update_term_meta(
 							$term_id,
 							$prefix . $field,
-							$_POST[$prefix . $field]
+							$data
 						);
 					}
 				}		
@@ -3482,7 +5043,7 @@ HTML;
 				}
 			}
 
-			$columns = apply_filters(strtolower(__CLASS__) . '_taxonomy_column_title', $columns);
+			$columns = apply_filters(strtolower(__CLASS__) . '_taxonomy_column_title', $columns, $type);
 		}
 
 		return $columns;
@@ -3516,14 +5077,152 @@ HTML;
 								$meta_value = '<a href="mailto:' . $meta_value . '">' . $meta_value . '</a>';
 							}
 
-							return apply_filters(strtolower(__CLASS__) . '_taxonomy_column_data', $meta_value, $column_key, $post_id);
+							return apply_filters(strtolower(__CLASS__) . '_taxonomy_column_data', $meta_value, $column_key, $term_id, $type);
 						}
 					}
 				}
 			}
 		}
 
-		return $output;
+		return apply_filters(strtolower(__CLASS__) . '_taxonomy_column_output', $output, $column_key, $term_id, $type);
+	}
+
+	// sort term list
+
+	public static function sort_terms($clauses, $taxonomies, $args) {
+		if (!is_admin()) {
+			return $clauses;
+		}
+
+		if (!function_exists('get_current_screen')) {
+			return $clauses;
+		}
+
+		$screen = get_current_screen();
+		if (!$screen || !isset(self::$taxes[$screen->taxonomy]) || $screen->base !== 'edit-tags') {
+			return $clauses;
+		}
+
+		if (!isset(self::$taxes[$screen->taxonomy]['sortable'])) {
+			return $clauses;
+		}
+
+		global $wpdb;
+
+		$clauses['join'] .= " LEFT JOIN {$wpdb->termmeta} AS tm ON t.term_id = tm.term_id AND tm.meta_key = 'term_order'";
+		$clauses['orderby'] = "ORDER BY CAST(tm.meta_value AS UNSIGNED)";
+
+		return $clauses;
+	}
+
+	// add filters to post list page
+
+	public static function add_term_filters() {
+		$screen = get_current_screen();
+		$taxonomy = $screen->taxonomy;
+
+		if (!$taxonomy) {
+			return;
+		}
+
+		if (!isset(self::$taxes[$taxonomy])) {
+			// not one of ours
+			return;
+		}
+
+		// add our ajax search box
+
+		self::data_api();
+		$admin_url = get_admin_url();
+
+		$extra_script = ''; //apply_filters(strtolower(__CLASS__) . '_extra_terms_search', '', $taxonomy);
+
+		$html = <<<HTML
+			<script>
+				jQuery(function($) {
+					// $('.tablenav.top > .alignleft')
+					$('#ajax-search').append('<input id="bt-search" type="search" value="" autocomplete="off" placeholder="Type 3 characters or more to search..." style="width:260px">');
+					const plugin = basic_types;
+					const s = $('#bt-search');
+					const o = $('#the-list').clone(true, true);
+					s.appendTo(s.parent());
+					const h = debounce(function(e) {
+						const t = $('#the-list');
+						if (s.val().length > 2) {
+							$.ajax({
+								method: 'GET',
+								url: plugin.api.url,
+								beforeSend: function(xhr) {
+									xhr.setRequestHeader('X-WP-Nonce', plugin.api.nonce);
+								},
+								data: {
+									ptu: 'term',
+									type: '{$taxonomy}',
+									search: s.val(),
+									page: 1,
+									per: 50,
+									status: 'any'
+								}
+							})
+							.then(function(r) {
+								let tr = $('#the-list tr:first').clone();
+								tr.find('th, td').text('');
+								t.empty();
+								if (r.total == 0) {
+									var nr = tr.clone();
+									nr.attr('id', 'no-posts');
+									nr.find('.name').html('<strong>Nothing found</strong>');
+									t.append(nr);
+								}
+								else {
+									r.results.forEach(function(result) {
+										var nr = tr.clone();
+										nr.attr('id', 'tag-' + result.id);
+										nr.find('.name').html('<strong><a class="row-title" href="{$admin_url}term.php?tag_ID=' + result.id + '&amp;taxonomy={$taxonomy}" aria-label="“' + result.name + '” (Edit)">' + result.name + '</a></strong>');
+										{$extra_script}
+										t.append(nr);
+									});
+								}
+							});
+						}
+						else {
+							t.replaceWith(o.clone(true, true));
+						}
+					}, 300);
+					s.on('keyup', h);
+				});
+			</script>
+HTML;
+		echo $html;
+	}
+
+	// initialise term order meta key
+
+	public static function init_term_order_meta($term_id, $tt_id, $taxonomy) {
+		if (!isset(self::$taxes[$taxonomy])) {
+			return;
+		}
+
+		$exists = get_term_meta($term_id, 'term_order', true);
+
+		if ($exists === '') {
+			$max = 0;
+			$terms = get_terms([
+				'taxonomy' => $taxonomy,
+				'hide_empty' => false,
+				'fields' => 'ids',
+				'meta_key' => 'term_order',
+				'orderby' => 'meta_value_num',
+				'order' => 'ASC'
+			]);
+
+			if (!is_wp_error($terms) && $terms) {
+				$last_id = end($terms);
+				$max = intval(get_term_meta($last_id, 'term_order', true));
+			}
+
+			update_term_meta($term_id, 'term_order', $max + 1);
+		}
 	}
 
 	// add buttons to custom taxonomy list page
@@ -3534,7 +5233,8 @@ HTML;
 
 		if ($screen->base == 'edit-tags' && $action != 'new') {
 			if ($taxonomy && isset(self::$taxes[$taxonomy])) {
-				self::importer($taxonomy, 'taxonomy');
+				if (_BT['bt_transfer'] == 'yes') {
+					self::importer($taxonomy, 'taxonomy');
 ?>
 				<script>
 					jQuery(function($) {
@@ -3550,6 +5250,18 @@ HTML;
 					});
 				</script>
 <?php
+				}
+				else {
+?>
+				<script>
+					jQuery(function($) {
+						let e = $('h1.wp-heading-inline');
+						let b = '<a class="page-title-action primary" href="/wp-admin/edit-tags.php?taxonomy=<?php echo $taxonomy; ?>&action=new">Add New</a>';
+						e.after(b);
+					});
+				</script>
+<?php
+				}
 			}
 		}
 	}
@@ -3689,7 +5401,7 @@ HTML;
 		self::data_api();
 
 		self::gen_css();
-		self::gen_js();
+		self::gen_js('user');
 ?>
 								<script>
 									$(function() {
@@ -3897,6 +5609,10 @@ HTML;
 	// save user data
 
 	public static function update_profile_fields($user_id) {
+		if (defined('DOING_AJAX') && DOING_AJAX) {
+			return;
+		}
+
 		if (current_user_can('edit_user', $user_id)) {
 			$user = get_user_by('id', $user_id);
 			$role = get_role($user->roles[0]);
@@ -4003,15 +5719,90 @@ HTML;
 	//    ███    ███      ███    ███  ███▌    ▄    ███         
 	//    ███    █▀       ██████████  █████▄▄██   ▄████▀
 
+	// create a hash based on the logged-in user
+
+	public static function hash() {
+		return (is_user_logged_in()) ? hash('sha1', 'e' . wp_get_current_user()->ID) : false;
+	}
+
+	// find a post by it's title
+	// it is assumed the title is unique
+	// no checks are done to ensure this is the case
+	// so be careful with this
+
+	public static function get_post_by_title($type, $title) {
+		global $wpdb;
+
+		$id = $wpdb->get_var("SELECT ID FROM $wpdb->posts WHERE post_title = '" . $title . "' AND post_type = '" . $type .  "';");
+		$post = ($id) ? get_post($id) : false;
+		return ($post instanceof WP_Post) ? $post : false;
+	}
+
+	// get all posts of type
+	// just a shorthand wrapper, nothing clever here
+
+	public static function get_posts($type, $order_by = 'title', $status = 'publish') {
+		return get_posts([
+			'post_type' => $type,
+			'post_status' => $status,
+			'posts_per_page' => -1,
+			'orderby' => $order_by,
+			'order' => 'ASC'
+		]);
+	}
+
+	// find posts matching meta keys and values
+	// again, a shorthand wrapper for convenience
+
+	public static function find_posts($type, $meta, $args = []) {
+		$query = ['relation' => 'AND'];
+
+		foreach ($meta as $key => $value) {
+			$query[] = [
+				'key' => self::prefix($type) . $key,
+				'value' => $value,
+				'compare' => '='
+			];
+		}
+
+		$array = array_merge([
+			'post_type' => $type,
+			'post_status' => 'publish',
+			'posts_per_page' => -1,
+			'meta_query' => $query
+		], $args);
+
+		return get_posts($array);
+	}
+
+	// get the requested type name/slug
+	// based on if the request is for
+	// a post or a term
+
+	public static function get_type($function, $id) {
+
+		switch ($function) {
+			case 'post': {
+				return get_post_type($id);
+				break;
+			}
+			case 'term': {
+				$term = get_term($id);
+				return ($term && !is_wp_error($term)) ? $term->taxonomy : false;
+				break;
+			}
+		}
+
+		return false;
+	}
+
 	// get a meta value for a post or term by meta key
 
-	public static function get($id, $field, $is_json = false) {
-		$type = get_post_type($id);
-		$function = 'post';
+	public static function get($function, $id, $field, $is_json = false) {
+		$type = self::get_type($function, $id);
 
-		if (!$type || $type == 'page') {
-			$type = get_term($id)->taxonomy;
-			$function = 'term';
+		if (!$type) {
+			return false;
 		}
 
 		$data = call_user_func_array('get_' . $function . '_meta', [$id, self::prefix($type) . $field, true]);
@@ -4021,36 +5812,25 @@ HTML;
 
 	// get all meta data for a post or term
 
-	public static function get_all($id, $is_json = false) {
-		$type = get_post_type($id);
-		$function = 'post';
+	public static function get_all($function, $id, $is_json = false) {
+		$type = self::get_type($function, $id);
 
-		if (!$type || $type == 'page') {
-			$type = get_term($id)->taxonomy;
-			$function = 'term';
+		if (!$type) {
+			return false;
 		}
 
 		$data = call_user_func_array('get_' . $function . '_meta', [$id]);
 
-		$result = [];
-
-		foreach ($data as $key => $value) {
-			$remove = self::prefix($type);
-			$result[str_replace($remove, '', $key)] = $value[0];
-		}
-
-		return ($is_json) ? json_decode($result, true) : $result;
+		return ($is_json) ? json_decode($data, true) : $data;
 	}
 
 	// set a meta value of a field for a post or term
 
-	public static function set($id, $field, $value) {
-		$type = get_post_type($id);
-		$function = 'post';
+	public static function set($function, $id, $field, $value) {
+		$type = self::get_type($function, $id);
 
 		if (!$type) {
-			$type = get_term($id)->taxonomy;
-			$function = 'term';
+			return false;
 		}
 
 		return call_user_func_array('update_' . $function . '_meta', [$id, self::prefix($type) . $field, $value]);
@@ -4090,39 +5870,57 @@ HTML;
 		return self::update($id, $field, $key, false);
 	}
 
-	// returns an array of all meta fields for a post or term
+	// returns an array of all meta fields for a post, term or role
 
-	public static function fields($type) {
-		$fields = [];
-		$data_type = null;
-
-		if (isset(self::$posts[$type])) {
-			$data_type = self::$posts[$type];
-		}
-		else if (isset(self::$taxes[$type])) {
-			$data_type = self::$taxes[$type];
-		}
-
-		if (count($data_type) > 0) {
-			foreach ($data_type as $field => $keys) {
-				$fields[] = $field;
+	public static function fields($entity_type, $type) {
+		switch ($entity_type) {
+			case 'post': {
+				$e = 'posts';
+				break;
+			}
+			case 'tax': {
+				$e = 'taxes';
+				break;
+			}
+			case 'role': {
+				$e = 'roles';
+				break;
+			}
+			default: {
+				$e = null;
 			}
 		}
 
-		return $fields;
+		return ($e) ? self::get_meta_fields(self::$$e[$type]['sections']) : false;
 	}
 
-	// returns an array of all keys for a meta field for a post/term
+	// returns an array of all keys for a meta field for a post, term or role
 
-	public static function keys($type, $field) {
-		if (isset(self::$posts[$type])) {
-			return self::$posts[$type][$field];
-		}
-		else if (isset(self::$taxes[$type])) {
-			return self::$taxes[$type][$field];
+	public static function keys($type, $entity_type, $field) {
+		switch ($entity_type) {
+			case 'post': {
+				$e = 'posts';
+				break;
+			}
+			case 'tax': {
+				$e = 'taxes';
+				break;
+			}
+			case 'role': {
+				$e = 'roles';
+				break;
+			}
+			default: {
+				$e == null;
+			}
 		}
 
-		return false;
+		if (!$e) {
+			return false;
+		}
+		else {
+			return self::get_meta_fields(self::$$e[$type]['sections'])[$field] ?? false;
+		}
 	}
 
 	// creates a post object of the requested type
@@ -4153,15 +5951,90 @@ HTML;
 		return $terms;
 	}
 
-	// returns all posts of a type
+	// remove all terms of a taxonomy from a post type
 
-	public static function get_posts($type, $orderby = 'title', $order = 'ASC') {
+	public static function remove_terms_from_posts($taxonomy, $post_type) {
+		$posts = get_posts([
+			'post_type' => $post_type,
+			'post_status' => 'publish',
+			'numberposts' => -1
+		]);
+
+		if (count($posts) > 0) {
+			foreach ($posts as $p) {
+				wp_set_object_terms($p->ID, [], 'colourset', false);
+			}
+		}
+
+		return count($posts);
+	}
+
+	// set taxonomy terms of a post type using a common
+	// meta key/value e.g. a relationship id using a
+	// temporary key/value
+
+	public static function set_post_terms_by_meta($post_type, $taxonomy, $meta_key) {
+		$posts = get_posts([
+			'post_type' => $post_type,
+			'post_status' => 'publish',
+			'numberposts' => -1
+		]);
+
+		if (count($posts) > 0) {
+			foreach ($posts as $p) {
+				$oid = BT::get('post', $p->ID, $meta_key);
+
+				$terms = get_terms([
+					'taxonomy' => $taxonomy,
+					'hide_empty' => false,
+					'meta_query' => [[
+						'key' => BT::prefix($taxonomy) . $meta_key,
+						'value' => $oid
+					]]
+				]);
+
+				if (!is_wp_error($terms) && !empty($terms)) {
+					$term_ids = wp_list_pluck($terms, 'term_id');
+					wp_set_object_terms($p->ID, $term_ids, $taxonomy, false);
+				}
+			}
+		}
+
+		return count($posts);
+	}
+
+	// returns all posts where the title
+	// contains the search term
+
+	public static function find_posts_by_title($type, $search) {
+		global $wpdb;
+
+		return $wpdb->get_results($wpdb->prepare(
+			"SELECT * FROM $wpdb->posts
+			WHERE post_type = %s
+			AND post_status = 'publish'
+			AND post_title LIKE %s",
+			$type,
+			'%' . $wpdb->esc_like($search) . '%'
+		));
+	}
+
+	// returns all posts that are in
+	// an array of terms of a taxonomy
+
+	public static function get_posts_of_term_ids($type, $tax, $term_ids) {
 		return get_posts([
 			'post_type' => $type,
 			'post_status' => 'publish',
 			'posts_per_page' => -1,
-			'orderby' => $orderby,
-			'order' => $order
+			'tax_query' => [
+				[
+					'taxonomy' => $tax,
+					'field' => 'term_id',
+					'terms' => $term_ids,
+					'operator' => 'IN'
+				]
+			]
 		]);
 	}
 
@@ -4217,48 +6090,204 @@ HTML;
 		]);
 	}
 
-	// empty a taxonomy of all relationships and terms
+	// returns all posts that have any term
+	// of a taxonomy, and exclude posts that
+	// have no terms set
 
-	/*
+	public static function get_posts_of_taxonomy($type, $taxonomy) {
+		return get_posts([
+			'post_type' => $type,
+			'post_status' => 'publish',
+			'posts_per_page' => -1,
+			'tax_query' => [
+				[
+					'taxonomy' => $taxonomy,
+					'operator' => 'EXISTS'
+				]
+			]
+		]);
+	}
 
-	DELETE tr
-	FROM wp_term_relationships tr
-	JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id
-	WHERE tt.taxonomy = 'customer';
+	// returns all posts with meta key/values that are
+	// of a date type that fall between start and end dates
+	// $start['key'] is the meta_key name and $start['value'] is the starting date
+	// $end['key'] is the meta_key name and $end['value'] is the ending date
+	// but $end can be null to just get all posts after a specified date
 
-	DELETE FROM wp_term_taxonomy
-	WHERE taxonomy = 'customer';
+	public static function get_posts_by_dates($type, $start, $end = null) {
+		$query = ['relation' => 'AND'];
 
-	DELETE t
-	FROM wp_terms t
-	LEFT JOIN wp_term_taxonomy tt ON t.term_id = tt.term_id
-	WHERE tt.term_id IS NULL;
+		$query[] = [
+			'key' => self::prefix($type) . $start['key'],
+			'value' => $start['value'],
+			'compare' => '>=',
+			'type' => 'DATE'
+		];
 
-	*/
+		if (is_array($end)) {
+			$query[] = [
+				'key' => self::prefix($type) . $end['key'],
+				'value' => $end['value'],
+				'compare' => '<=',
+				'type' => 'DATE'
+			];
+		}
 
-	// empty a post type of all posts, meta and relationships
+		return get_posts([
+			'post_type' => $type,
+			'post_status' => 'publish',
+			'posts_per_page' => -1,
+			'meta_query' => $query,
+			'fields' => 'ids'
+		]);
+	}
 
-	/*
+	// get all values of a meta key for a set of post IDs
 
-	DELETE tr
-	FROM wp_term_relationships tr
-	JOIN wp_posts p ON tr.object_id = p.ID
-	WHERE p.post_type = 'movie';
+	public static function get_meta_for_post_ids($type, $key, $id_array) {
+		global $wpdb;
 
-	DELETE pm
-	FROM wp_postmeta pm
-	JOIN wp_posts p ON pm.post_id = p.ID
-	WHERE p.post_type = 'movie';
+		$meta_key = self::prefix($type) . $key;
 
-	DELETE c
-	FROM wp_comments c
-	JOIN wp_posts p ON c.comment_post_ID = p.ID
-	WHERE p.post_type = 'movie';
+		$ids = implode(',', array_map('absint', $id_array));
+		$sql = "SELECT DISTINCT meta_value FROM $wpdb->postmeta WHERE post_id IN ($ids) AND meta_key='$meta_key';";
 
-	DELETE FROM wp_posts
-	WHERE post_type = 'movie';
+		return array_column($wpdb->get_results($sql, ARRAY_N), 0);
+	}
 
-	*/
+	// trim double-quotes if present, and
+	// also trim any whitespace after that
+
+	public static function trim($string) {
+		$length = strlen($string);
+
+		if ($length < 2) {
+			return $string;
+		}
+
+		$string = stripslashes($string);
+		return trim(trim($string, '"'));
+	}
+
+	// deletes all posts and meta of a specified type and slug
+	// be careful, Japan is watching and so is the US...
+
+	public static function nuke($type, $slug) {
+		global $wpdb;
+
+		switch ($type) {
+			case 'post': {
+				$wpdb->query("DELETE pm FROM {$wpdb->postmeta} pm INNER JOIN {$wpdb->posts} p ON pm.post_id = p.ID WHERE p.post_type = '{$slug}';");
+				$wpdb->query("DELETE tr FROM {$wpdb->term_relationships} tr INNER JOIN {$wpdb->posts} p ON tr.object_id = p.ID WHERE p.post_type = '{$slug}';");
+				$wpdb->query("DELETE FROM {$wpdb->posts} WHERE post_type = '{$slug}';");
+
+				break;
+			}
+			case 'taxonomy': {
+				$wpdb->query("DELETE tr FROM wp_term_relationships tr JOIN wp_term_taxonomy tt ON tr.term_taxonomy_id = tt.term_taxonomy_id WHERE tt.taxonomy = '{$slug}';");
+				$wpdb->query("DELETE FROM wp_term_taxonomy WHERE taxonomy = '{$slug}';");
+				$wpdb->query("DELETE t FROM wp_terms t LEFT JOIN wp_term_taxonomy tt ON t.term_id = tt.term_id WHERE tt.term_id IS NULL;");
+
+				break;
+			}
+		}
+	}
+
+	// meta association - taxonomy version
+
+	// where we have a meta value that
+	// we want to convert to a taxonomy
+	// term value - useful for imported data
+
+	public static function term_meta_to_term($object_tax, $object_key, $target_tax, $target_key) {
+		$prefix = self::prefix($object_tax);
+
+		$objects = get_terms([
+			'taxonomy' => $object_tax,
+			'hide_empty' => false
+		]);
+
+		$count = 0;
+
+		foreach ($objects as $o) {
+			$object_meta = self::get('term', $o->term_id, $object_key);
+
+			$terms = get_terms([
+				'taxonomy' => $target_tax,
+				'hide_empty' => false,
+				'meta_query' => [
+					[
+						'key' => self::prefix($target_tax) . $target_key,
+						'value' => $object_meta
+					]
+				]
+			]);
+
+			if (!empty($terms) && !is_wp_error($terms)) {
+				$term_ids = wp_list_pluck($terms, 'term_id');
+
+				update_term_meta(
+					$o->term_id,
+					$prefix . $target_tax,
+					implode(',', $term_ids)
+				);
+
+				$count++;
+			}
+		}
+	}
+
+	// get the default value of a field of a type, either post or term
+
+	public static function get_default($function, $type, $field) {
+		$keys = self::get_meta_field($function, $type, $field);
+
+		return $keys['default'] ?? '';
+	}
+
+	// generate an .eml file which is a packaged up
+	// email that can be opened and your default email
+	// client will read and create a pre-populated
+	// email to check, edit and send
+
+	public static function get_eml($to, $subject, $body, $pdf, $name) {
+		$boundary = '====BOUNDARY_' . md5(uniqid(time())) . '====';
+		$binary = file_get_contents($pdf);
+		$pdf_base64 = chunk_split(base64_encode($binary));
+		$filename = $name . '.pdf';
+
+			$eml = 
+"To: {$to}
+Subject: {$subject}
+MIME-Version: 1.0
+X-Unsent: 1
+Content-Type: multipart/mixed; boundary=\"{$boundary}\"
+
+--{$boundary}
+Content-Type: text/plain; charset=\"UTF-8\"
+
+{$body}
+
+--{$boundary}
+Content-Type: application/pdf
+Content-Disposition: attachment; filename=\"{$filename}\"
+Content-Transfer-Encoding: base64
+
+{$pdf_base64}
+
+--{$boundary}--
+";
+
+		//$eml = str_replace("\n", "\r\n", $eml);
+	
+		header('Content-Type: message/rfc822');
+		header('Content-Disposition: attachment; filename="' . $name . '.eml' . '"');
+		header('Content-Length: ' . strlen($eml));
+
+		echo $eml;
+		die;
+	}
+
 
 	//     ▄████████       ▄█     ▄████████  ▀████    ▐████▀  
 	//    ███    ███      ███    ███    ███    ███▌   ████▀   
@@ -4271,7 +6300,6 @@ HTML;
 
 	public static function ajax() {
 		$hash = $_POST['hash'] ?? null;
-		$check = hash('sha1', 'e' . wp_get_current_user()->ID);
 		$nonce = $_POST['nonce'] ?? null;
 
 		if (!$nonce || !wp_verify_nonce($nonce, _PLUGIN)) {
@@ -4279,7 +6307,7 @@ HTML;
 			die;
 		}
 
-		if (!$hash || $hash !== $check) {
+		if (!$hash || $hash !== self::hash()) {
 			wp_send_json_error('security error (hash failed)');
 			die;
 		}
@@ -4292,6 +6320,64 @@ HTML;
 		}
 
 		switch ($data['cmd']) {
+			case 'update_post_order': {
+				if (!current_user_can('edit_others_posts')) {
+					wp_send_json_error('no permissions');
+				}
+
+				$type = isset($data['post_type']) ? sanitize_key($data['post_type'] ) : '';
+
+				if (!$type || !isset(self::$posts[$type])) {
+					wp_send_json_error('invalid type');
+				}
+
+				$order = isset($data['order']) && is_array($data['order']) ? array_map('intval', $data['order'] ) : [];
+
+				if (empty($order)) {
+					wp_send_json_error('no order specified');
+				}
+
+				$pos = 0;
+
+				foreach ($order as $pid) {
+					if (get_post_type($pid) === $type) {
+						update_post_meta($pid, 'post_order', $pos);
+						$pos++;
+					}
+				}
+
+				wp_send_json_success('post order saved');
+				break;
+			}
+			case 'update_term_order': {
+				if (!current_user_can('edit_others_posts')) {
+					wp_send_json_error('no permissions');
+				}
+
+				$tax = isset($data['term']) ? sanitize_key($data['term']) : '';
+
+				if (!$tax || !isset(self::$taxes[$tax])) {
+					wp_send_json_error('invalid term: ' . $tax);
+				}
+
+				$order = isset($data['order']) && is_array($data['order']) ? array_map('intval', $data['order'] ) : [];
+
+				if (empty($order)) {
+					wp_send_json_error('no order specified');
+				}
+
+				$pos = 0;
+
+				foreach ($order as $tid) {
+					if ($tid > 0) {
+						update_term_meta($tid, 'term_order', $pos);
+						$pos++;
+					}
+				}
+
+				wp_send_json_success('term order saved: ' . var_export($order, true));
+				break;
+			}
 			case 'import': {
 				$type = $data['type'];
 				$row = $data['data'];
@@ -4306,12 +6392,12 @@ HTML;
 
 				switch ($data['port']) {
 					case 'post': {
-						if (is_int($id) && get_post($id)) {
+						if (filter_var($id, FILTER_VALIDATE_INT) && get_post($id)) {
 							// we are updating a post
 
 							wp_update_post([
 								'ID' => $id,
-								'post_title' => $title
+								'post_title' => self::trim($title)
 							]);
 
 							$result = 'updated post';	
@@ -4320,7 +6406,7 @@ HTML;
 							// we are adding a new post
 
 							$id = wp_insert_post([
-								'post_title' => $title,
+								'post_title' => self::trim($title),
 								'post_content' => '',
 								'post_status' => 'publish',
 								'post_date' => date('Y-m-d H:i:s'),
@@ -4334,7 +6420,7 @@ HTML;
 
 						if (count($row) > 0) {
 							foreach ($row as $field => $value) {
-								if (self::keys($type, $field)) {
+								if (self::keys($type, 'post', $field)) {
 									update_post_meta($id, self::prefix($type) . $field, $value);
 								}
 								else {
@@ -4355,11 +6441,13 @@ HTML;
 						die;
 					}
 					case 'taxonomy': {
+						self::register_taxes();
+
 						if (is_int($id) && get_term($id)) {
 							// we are updating a term
 
 							wp_update_term($id, $type, [
-								'name' => $title
+								'name' => self::trim($title)
 							]);
 
 							$result = 'updated term';
@@ -4367,15 +6455,20 @@ HTML;
 						else {
 							// we are adding a new term
 
-							$term = wp_create_term($title, $type);
-							$id = $term['term_id'];
+							$term = wp_insert_term(self::trim($title), $type);
 
+							if (is_wp_error($term)) {
+								wp_send_json_error('term creation error: ' . $term->get_error_message());
+								die;
+							}
+
+							$id = $term['term_id'];
 							$result = 'added term';
 						}
 
 						if (count($row) > 0) {
 							foreach ($row as $field => $value) {
-								update_term_meta($id, self::prefix($type) . $field, $value);
+								update_term_meta($id, self::prefix($type) . $field, self::trim($value));
 							}
 						}
 
@@ -4391,7 +6484,15 @@ HTML;
 				break;
 			}
 			default: {
-				wp_send_json_error('unsupported command');
+				$result = apply_filters(strtolower(__CLASS__) . '_handle_ajax', false, $data);
+
+				if ($result) {
+					wp_send_json_success($result);
+				}
+				else {
+					wp_send_json_error('unsupported command');
+				}
+				
 				die;
 			}
 		}
@@ -4545,11 +6646,16 @@ HTML;
 		global $wpdb;
 
 		$clauses['fields'] = 'DISTINCT ' . $clauses['fields'];
+		$clauses['join']  .= " LEFT JOIN {$wpdb->termmeta} tm ON t.term_id = tm.term_id ";
 
-		$clauses['join'] .= " LEFT JOIN {$wpdb->termmeta} tm ON t.term_id = tm.term_id ";
+		$search = '%' . $wpdb->esc_like($args['search']) . '%';
 
-		$search = esc_sql($wpdb->esc_like($args['search']));
-		$clauses['where'] .= " OR (tm.meta_value LIKE '%$search%') ";
+		$taxonomies_in = implode("','", array_map('esc_sql', $taxonomies));
+
+		$clauses['where'] .= $wpdb->prepare(
+			" OR (tm.meta_value LIKE %s AND tt.taxonomy IN ('$taxonomies_in')) ",
+			$search
+		);
 
 		$clauses['groupby'] = 't.term_id';
 
@@ -4644,7 +6750,8 @@ HTML;
 			$p_or_t = null;
 
 			if (isset(self::$posts[$type])) {
-				foreach (self::$posts[$type] as $field => $keys) {
+				$fields = self::get_meta_fields(self::$posts[$type]['sections']);
+				foreach ($fields as $field => $keys) {
 					$cols[] = $field;
 				}
 
@@ -4660,7 +6767,8 @@ HTML;
 			}
 
 			if (isset(self::$taxes[$type])) {
-				foreach (self::$taxes[$type]['fields'] as $field => $keys) {
+				$fields = self::get_meta_fields(self::$taxes[$type]['sections']);
+				foreach ($fields as $field => $keys) {
 					$cols[] = $field;
 				}
 
@@ -4687,13 +6795,15 @@ HTML;
 
 					$row = [];
 					$row[] = $id;
-					$row[] = ($p_or_t == 'post') ? $object->post_title : $object->name;
+					$title = ($p_or_t == 'post') ? $object->post_title : $object->name;
+					$row[] = '"' . $title . '"';
 
 					$col_count = count($cols) - 2;
 
 					if ($col_count > 0) {
 						for ($c = 0; $c < $col_count; $c++) {
-							$row[] = self::get($id, $cols[$c + 2]);
+							$thing = ($p_or_t == 'taxonomy') ? 'term' : 'post';
+							$row[] = self::get($thing, $id, $cols[$c + 2]);
 						}
 					}
 
@@ -4715,6 +6825,10 @@ HTML;
 //    ███    ██▄  ███    ███  ███    ███      ███
 //    ███    ███  ███    ███  ███    ███      ███  
 //  ▄█████████▀    ▀██████▀    ▀██████▀      ▄████▀
+
+function bt_debug() {
+
+}
 
 add_action('init', 'BT::init');
 add_action('rest_api_init', 'BT::api_init');

@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.4.1
+ * Version: 2.4.2
 */
 
 /*
@@ -1424,7 +1424,7 @@ class BT {
 				$('#pagination').append(n).append(p);
 			});
 			function bt_download_csv(csv, filename) {
-				const csv_blob = new Blob([csv], { type: 'text/csv' });
+				const csv_blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
 				const url = URL.createObjectURL(csv_blob);
 
 				const a = document.createElement('a');
@@ -1435,11 +1435,17 @@ class BT {
 			}
 			function bt_table_to_csv(tid) {
 				const rows = document.querySelectorAll('#' + tid + ' tr');
-				let csv = '';
+				let csv = '\uFEFF';
 
 				rows.forEach(row => {
 					const cols = row.querySelectorAll('td, th');
-					const row_data = Array.from(cols).map(col => col.textContent).join(',');
+					const row_data = Array.from(cols).map(col => {
+						let text = col.textContent.trim().replace(/[\n\r\t]+/g, ' ');
+						if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+							text = '"' + text.replace(/"/g, '""') + '"';
+						}
+						return text;
+					}).join(',');
 					csv += row_data + '\n';
 				});
 
@@ -3146,6 +3152,10 @@ class BT {
 								if ($v[0] == '') {
 									$v[0] = self::get_default($what, $type, $field);
 								}
+
+								//
+								// NEED TO FIX THIS - WHAT IS THE $v[0] ABOUT!?!
+								//
 
 								$$var = (is_numeric($v)) ? (float)$v[0] : $v[0];
 							}
@@ -6614,24 +6624,48 @@ Content-Transfer-Encoding: base64
 
 		add_filter('posts_join', __CLASS__ . '::posts_search_join');
 		add_filter('posts_where', __CLASS__ . '::posts_search_where');
-		add_filter('posts_distinct', function() { return 'DISTINCT'; });
+		add_filter('posts_groupby', __CLASS__ . '::posts_search_groupby');
+		//add_filter('posts_distinct', function() { return 'DISTINCT'; });
 	}
 
 	public static function posts_search_join($join) {
 		global $wpdb;
-
+		
+		remove_filter('posts_join', __CLASS__ . '::posts_search_join');
+		
 		return $join . " LEFT JOIN {$wpdb->postmeta} AS pm ON pm.post_id = {$wpdb->posts}.ID ";
 	}
 
 	public static function posts_search_where($where) {
 		global $wpdb;
+		
+		remove_filter('posts_where', __CLASS__ . '::posts_search_where');
 
 		if (!isset($_GET['s']) || empty($_GET['s'])) {
 			return $where;
 		}
 
 		$search = esc_sql($wpdb->esc_like(sanitize_text_field($_GET['s'])));
-		return $where . " OR pm.meta_value LIKE '%{$search}%'";
+
+		$where = preg_replace(
+			"/(\({$wpdb->posts}\.post_title LIKE[^)]+\))/",
+			"$1 OR (pm.meta_value LIKE '%{$search}%')",
+			$where
+		);
+		
+		return $where;
+	}
+
+	public static function posts_search_groupby($groupby) {
+		global $wpdb;
+		
+		remove_filter('posts_groupby', __CLASS__ . '::posts_search_groupby');
+		
+		if (empty($groupby)) {
+			return "{$wpdb->posts}.ID";
+		}
+		
+		return $groupby;
 	}
 
 	public static function terms_search($clauses, $taxonomies, $args) {

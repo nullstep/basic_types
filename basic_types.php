@@ -6,41 +6,16 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.4.2
+ * Version: 2.4.4
 */
 
-/*
-
-helper functions
-
-- get_post_by_title($type, $title)
-- get_posts($type, $order_by = 'title', $status = 'publish')
-- find_posts($type, $meta, $args = [])
-- get_type($function, $id)
-- get($function, $id, $field, $is_json = false)
-- get_all($function, $id, $is_json = false)
-- set($function, $id, $field, $value)
-- update($id, $field, $key, $value = false)
-- delete($id, $field, $key)
-- fields($type, $entity_type)
-- keys($type, $entity_type, $field)
-- make($type, $title, $author_id = null)
-- get_terms($taxonomy)
-- remove_terms_from_posts($taxonomy, $post_type)
-- set_post_terms_by_meta($post_type, $taxonomy, $meta_key)
-- get_posts_of_term($type, $tax, $term, $orderby = 'title', $order = 'ASC')
-- get_posts_sort_by_meta($type, $meta_key, $order = 'ASC')
-- get_posts_of_term_sort_by_meta($type, $tax, $term, $meta_key, $order = 'ASC')
-- get_meta_for_post_ids($key, $id_array)
-- trim($string)
-- nuke($type, $slug)
-
-*/
+// ctrl+r for symbol list
 
 defined('ABSPATH') or die('⎺\_(ツ)_/⎺');
 
 define('_PLUGIN', 'basic_types');
 define('_DEVUSER', ['admin', 'nullstep', 'scott']);
+define('_BTSALT', '390e0ec158790e75726e4be7be8aba28673abb17');
 
 class BT {
 	public static $message = null;
@@ -2902,7 +2877,17 @@ class BT {
 					else {
 						// view linked record of 'type'
 
-						echo '<input type="text" readonly id="linked_' . $keys['linked'] . '" value="' . (($fval != '') ? $fval : 'N/A') . '" style="width:99%">';						
+						$value = 'N/A';
+
+						if (is_numeric($fval)) {
+							$post = get_post($fval);
+
+							if ($post) {
+								$value = $post->post_title;
+							}							
+						}
+
+						echo '<input type="text" readonly id="linked_' . $keys['linked'] . '" value="' . $value . '" style="width:99%">';						
 					}
 				}
 
@@ -5732,7 +5717,7 @@ HTML;
 	// create a hash based on the logged-in user
 
 	public static function hash() {
-		return (is_user_logged_in()) ? hash('sha1', 'e' . wp_get_current_user()->ID) : false;
+		return (is_user_logged_in()) ? hash('sha1', _BTSALT . wp_get_current_user()->ID) : false;
 	}
 
 	// find a post by it's title
@@ -5751,28 +5736,37 @@ HTML;
 	// get all posts of type
 	// just a shorthand wrapper, nothing clever here
 
-	public static function get_posts($type, $order_by = 'title', $status = 'publish') {
+	public static function get_posts($type, $order = 'ASC', $order_by = 'title', $status = 'publish') {
 		return get_posts([
 			'post_type' => $type,
 			'post_status' => $status,
 			'posts_per_page' => -1,
 			'orderby' => $order_by,
-			'order' => 'ASC'
+			'order' => $order
 		]);
 	}
 
 	// find posts matching meta keys and values
 	// again, a shorthand wrapper for convenience
 
-	public static function find_posts($type, $meta, $args = []) {
-		$query = ['relation' => 'AND'];
+	public static function find_posts($type, $meta, $rel = 'AND', $args = []) {
+		$query = ['relation' => $rel];
 
 		foreach ($meta as $key => $value) {
-			$query[] = [
-				'key' => self::prefix($type) . $key,
-				'value' => $value,
-				'compare' => '='
-			];
+			if (is_array($value)) {
+				$query[] = [
+					'key' => self::prefix($type) . $key,
+					'value' => $value,
+					'compare' => 'IN'
+				];
+			}
+			else {
+				$query[] = [
+					'key' => self::prefix($type) . $key,
+					'value' => $value,
+					'compare' => '='
+				];
+			}
 		}
 
 		$array = array_merge([
@@ -5830,8 +5824,22 @@ HTML;
 		}
 
 		$data = call_user_func_array('get_' . $function . '_meta', [$id]);
+		$array = [];
 
-		return ($is_json) ? json_decode($data, true) : $data;
+		if (is_array($data)) {
+			if (count($data) > 0) {
+				$type = get_post_type($id);
+				$prefix = ST::prefix($type);
+
+				foreach ($data as $key => $value) {
+					if (str_contains($key, $prefix)) {
+						$array[str_replace($prefix, '', $key)] = $value[0];
+					}
+				}
+			}
+		}
+
+		return ($is_json) ? json_decode($array, true) : $array;
 	}
 
 	// set a meta value of a field for a post or term
@@ -5897,11 +5905,16 @@ HTML;
 				break;
 			}
 			default: {
-				$e = null;
+				$e == null;
 			}
 		}
 
-		return ($e) ? self::get_meta_fields(self::$$e[$type]['sections']) : false;
+		if (!$e) {
+			return false;
+		}
+		else {
+			return self::get_meta_fields(self::$$e[$type]['sections'])[$field];
+		}
 	}
 
 	// returns an array of all keys for a meta field for a post, term or role
@@ -5936,12 +5949,14 @@ HTML;
 	// creates a post object of the requested type
 
 	public static function make($type, $title, $author_id = null) {
+		$user = wp_get_current_user();
+
 		return wp_insert_post([
-			'post_title' => $title,
+			'post_title' => iconv('UTF-8', 'ASCII//TRANSLIT', $title),
 			'post_content' => '',
 			'post_status' => 'publish',
 			'post_date' => date('Y-m-d H:i:s'),
-			'post_author' => $author_id ?? wp_get_current_user()->ID,
+			'post_author' => $author_id ?? (($user instanceof WP_User) ? $user->ID : 0),
 			'post_type' => $type,
 			'post_category' => array(0)
 		]);
@@ -6140,6 +6155,37 @@ HTML;
 				'value' => $end['value'],
 				'compare' => '<=',
 				'type' => 'DATE'
+			];
+		}
+
+		return get_posts([
+			'post_type' => $type,
+			'post_status' => 'publish',
+			'posts_per_page' => -1,
+			'meta_query' => $query,
+			'fields' => 'ids'
+		]);
+	}
+
+	// returns all posts of a type that has an integer meta field value
+	// that is between two supplied values
+
+	public static function get_posts_with_value_between($type, $key, $low, $high = null) {
+		$query = ['relation' => 'AND'];
+
+		$query[] = [
+			'key' => self::prefix($type) . $key,
+			'value' => $low,
+			'compare' => '>=',
+			'type' => 'NUMERIC'
+		];
+
+		if (is_numeric($high)) {
+			$query[] = [
+				'key' => self::prefix($type) . $key,
+				'value' => $high,
+				'compare' => '<=',
+				'type' => 'NUMERIC'
 			];
 		}
 
@@ -6625,7 +6671,6 @@ Content-Transfer-Encoding: base64
 		add_filter('posts_join', __CLASS__ . '::posts_search_join');
 		add_filter('posts_where', __CLASS__ . '::posts_search_where');
 		add_filter('posts_groupby', __CLASS__ . '::posts_search_groupby');
-		//add_filter('posts_distinct', function() { return 'DISTINCT'; });
 	}
 
 	public static function posts_search_join($join) {

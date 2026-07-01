@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.4.4
+ * Version: 2.4.5
 */
 
 // ctrl+r for symbol list
@@ -291,6 +291,7 @@ class BT {
 		add_action('admin_footer-edit-tags.php', __CLASS__ . '::add_term_filters');
 		add_filter('parse_query', __CLASS__ . '::apply_post_filters');
 		add_action('created_term', __CLASS__ . '::init_term_order_meta', 10, 3);
+		add_action('admin_notices', __CLASS__ . '::admin_notice');
 
 		add_filter('parent_file', __CLASS__ . '::set_current_menu');
 
@@ -1740,6 +1741,18 @@ class BT {
 		}
 	}
 
+	public static function admin_notice() {
+		$messages = apply_filters(strtolower(__CLASS__) . '_admin_notices', []);
+
+		if (!empty($messages) && !empty($_REQUEST['bt_msg'])) {
+			$msg = $messages[$_REQUEST['bt_msg']] ?? null;
+
+			if ($msg) {
+				printf('<div class="notice notice-%s is-dismissible"><p><i class="fa-solid fa-%s"></i> &nbsp; %s</p></div>', $msg['type'], $msg['icon'], $msg['text']);
+			}
+		}
+	}
+
 
 	//     ▄████████   ▄██████▄    ▄██████▄       ███         ▄████████     ▄████████  
 	//    ███    ███  ███    ███  ███    ███  ▀█████████▄    ███    ███    ███    ███  
@@ -2039,11 +2052,10 @@ class BT {
 					height: 36px;
 					line-height: 33px;
 					text-align: center;
-					width: 50px;
 				}
 				.plus-button {
 					font-size: 2rem;
-					line-height: 25px;
+					line-height: 30px;
 				}
 				.button-primary:hover {
 					box-shadow: 0 0 100px 100px rgba(255,255,255,.3) inset;
@@ -2119,6 +2131,34 @@ class BT {
 					td {
 						input, select {
 							width: 99%;
+						}
+
+						input.td-check {
+							appearance: none !important;
+							margin-left: 5px;
+							width: 24px;
+							height: 24px;
+							border: 2px solid #555;
+							border-radius: 4px;
+							cursor: pointer;
+							position: relative;
+						}
+
+						input.td-check:checked {
+							background-color: var(--primary-colour);
+							border-color: var(--primary-colour);
+						}
+
+						input.td-check:checked::before {
+							content: "";
+							position: absolute;
+							left: 10px;
+							top: 5px;
+							width: 5px;
+							height: 10px;
+							border: solid white;
+							border-width: 0 2px 2px 0;
+							transform: rotate(45deg);
 						}
 
 						input.expand {
@@ -2505,6 +2545,8 @@ class BT {
 			$extra = '{}';
 		}
 ?>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery-toast-plugin/1.3.2/jquery.toast.min.js"></script>
+		<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/jquery-toast-plugin/1.3.2/jquery.toast.min.css">
 		<script>
 			var $ = jQuery;
 
@@ -2887,7 +2929,7 @@ class BT {
 							}							
 						}
 
-						echo '<input type="text" readonly id="linked_' . $keys['linked'] . '" value="' . $value . '" style="width:99%">';						
+						echo '<input type="text" readonly id="linked_' . $keys['linked'] . '" value="' . $value . '" style="width:99%">';
 					}
 				}
 
@@ -3130,6 +3172,8 @@ class BT {
 						$calc = $keys['calc'] ?? null;
 						$data = ($oid) ? self::get_all($what, $oid) : null;
 						if ($data && $calc) {
+							$array = [];
+
 							foreach ($data as $f => $v) {
 								$field = str_replace(self::prefix($type), '', $f);
 								$var = '_' . $field;
@@ -3138,12 +3182,13 @@ class BT {
 									$v[0] = self::get_default($what, $type, $field);
 								}
 
-								//
-								// NEED TO FIX THIS - WHAT IS THE $v[0] ABOUT!?!
-								//
+								// debugging stuff
+								$array[] = [$var => $v[0]];
 
 								$$var = (is_numeric($v)) ? (float)$v[0] : $v[0];
 							}
+
+							error_log('/*** calc="' . $calc . '" vars="' . var_export($array, true) . '" ***/');
 
 							@eval('$out =' . $calc . ';');
 							$out = number_format($out, 2);
@@ -3586,7 +3631,13 @@ HTML;
 												}
 											}
 											else {
-												$cell = '<input type="text" readonly value="' . $data . '">';
+												if (isset($value['check'])) {
+													$checked = ($data == 'yes') ? ' checked' : '';
+													$cell = '<input class="td-check" type="checkbox" data-field="' . $key . '" id="' . $key . '-' . $p->ID . '"' . $checked . '>';
+												}
+												else {
+													$cell = '<input type="text" readonly value="' . $data . '">';
+												}
 											}
 										}
 									}
@@ -3625,7 +3676,7 @@ HTML;
 						</table>
 						<script>
 							jQuery(function($) {
-								function recalc(id) {
+								function recalc(id, load) {
 									var rows = $('#' + id + '_list tr.data');
 									$.each(rows, function(i, v) {
 										{$calc}
@@ -3634,14 +3685,27 @@ HTML;
 											function: 'update',
 											info: info
 										}, function(r) {
-											//console.log(r);
-											if (r.status == 'success') {
-												//alert('recalc success');
-												//window.location.reload(true);
-											}
-											else {
-												alert('recalc error');
-												//window.location.reload(true);
+											if (!load) {
+												if (r.status == 'success') {
+													$.toast({
+														heading: 'Success',
+														text: 'Item recalculation completed',
+														position: 'bottom-left',
+														icon: 'success',
+														stack: false,
+														loader: false
+													});
+												}
+												else {
+													$.toast({
+														heading: 'Error',
+														text: 'There was an error recalculating the item price',
+														position: 'bottom-left',
+														icon: 'error',
+														stack: false,
+														loader: false
+													});
+												}
 											}
 										});
 									});
@@ -3655,14 +3719,25 @@ HTML;
 											[f]: v
 										}
 									}, function(r) {
-										//console.log(r);
 										if (r.status == 'success') {
-											//alert('update success');
-											//window.location.reload(true);
+											$.toast({
+												heading: 'Success',
+												text: 'Order updating completed',
+												position: 'bottom-left',
+												icon: 'success',
+												stack: false,
+												loader: false
+											});
 										}
 										else {
-											alert('update error');
-											//window.location.reload(true);
+											$.toast({
+												heading: 'Error',
+												text: 'There was an error updating the order',
+												position: 'bottom-left',
+												icon: 'error',
+												stack: false,
+												loader: false
+											});
 										}
 									});
 								}
@@ -3694,10 +3769,14 @@ HTML;
 									window.BT.{$fid}.dlg();
 								});
 								$('.recalc').on('change', function(e) {
-									recalc('{$fid}');
+									recalc('{$fid}', false);
 								});
 								$('.update').on('change', function(e) {
 									update($(this).parent().parent().data('id'), $(this).data('field'), $(this).val());
+								});
+								$('.td-check').on('change', function(e) {
+									let c = ($(this).is(':checked')) ? 'yes' : 'no';
+									update($(this).parent().parent().data('id'), $(this).data('field'), c);
 								});
 								$('tr.data .delete').on('click', function(e) {
 									window.BT.call({
@@ -3708,14 +3787,19 @@ HTML;
 										}
 									}, function(r) {
 										if (r.status == 'success') {
-											window.location.reload(true);
+											$('#publish').click();
 										}
 										else {
-											alert('There was an error :(');
+											$.toast({
+												heading: 'Error',
+												text: 'There was an error adding the item',
+												position: 'top-right',
+												icon: 'error'
+											});
 										}
 									});
 								});
-								recalc('{$fid}');
+								recalc('{$fid}', true);
 							});
 						</script>
 HTML;
@@ -3731,18 +3815,18 @@ HTML;
 					echo '</div>';
 					echo '<div class="field-edit">';
 						echo '<textarea class="bt-array hidden" id="' . $fid . '" name="' . $fname . '">' . $fval . '</textarea>';
-						echo '<div class="button button-primary array-button plus-button" data-id="' . $fid . '">+</div>';
+						echo '<div class="button button-primary ' . $fid . '-array-button plus-button" data-id="' . $fid . '">+</div>';
 						echo '<div class="bt-array-holder" id="' . $fid . '-holder">';
 						$array = json_decode($fval);
 						if (is_array($array) && count($array) > 0) {
 							foreach ($array as $item) {
 								switch ($input) {
 									case 'text': {
-										echo '<textarea class="array-item">' . $item . '</textarea>';
+										echo '<textarea class="' . $fid . '-array-item">' . $item . '</textarea>';
 										break;
 									}
 									case 'input': {
-										echo '<input type="text" class="array-item" value="' . $item . '">';
+										echo '<input type="text" class="' . $fid . '-array-item" value="' . $item . '">';
 										break;
 									}
 								}
@@ -3753,10 +3837,10 @@ HTML;
 					$script = <<<JS
 						jQuery(function($) {
 							function update_{$fid}() {
-								$(document).off('change', '.array-item');
-								$(document).on('change', '.array-item', function(e) {
+								$(document).off('change', '.{$fid}-array-item');
+								$(document).on('change', '.{$fid}-array-item', function(e) {
 									let a = [];
-									$('.array-item').each(function() {
+									$('.{$fid}-array-item').each(function() {
 										let v = $(this).val();
 										if (v) {
 											a.push(v);											
@@ -3770,11 +3854,11 @@ HTML;
 								let n = h.children().length;
 								switch ('{$input}') {
 									case 'text': {
-										h.append('<textarea class="array-item"></textarea>');
+										h.append('<textarea class="{$fid}-array-item"></textarea>');
 										break;
 									}
 									case 'input': {
-										h.append('<input type="text" class="array-item" value="">');
+										h.append('<input type="text" class="{$fid}-array-item" value="">');
 										break;
 									}
 								}
@@ -4314,6 +4398,11 @@ HTML;
 		}
 
 		$type = $_GET['post_type'] ?? null;
+
+		if (!$type || !isset(self::$posts[$type])) {
+			return;
+		}
+
 		$prefix = self::prefix($type);
 		$meta_query = [];
 
@@ -5616,7 +5705,7 @@ HTML;
 				$prefix = self::prefix($role->name);
 
 				$fields = self::get_meta_fields(self::$roles['add'][$role->name]['sections']);
-				$keys = self::$roles['add'][$role->name]['fields'];
+				$keys = self::$roles['add'][$role->name]['fields'] ?? null;
 
 				if (count($fields)) {
 					foreach ($fields as $field => $value) {
@@ -5829,7 +5918,7 @@ HTML;
 		if (is_array($data)) {
 			if (count($data) > 0) {
 				$type = get_post_type($id);
-				$prefix = ST::prefix($type);
+				$prefix = BT::prefix($type);
 
 				foreach ($data as $key => $value) {
 					if (str_contains($key, $prefix)) {
@@ -5905,11 +5994,16 @@ HTML;
 				break;
 			}
 			default: {
-				$e == null;
+				$e = null;
 			}
 		}
 
-		return ($e) ? self::get_meta_fields(self::$$e[$type]['sections']) : false;
+		if (!$e) {
+			return false;
+		}
+		else {
+			return self::get_meta_fields(self::$$e[$type]['sections'])[$field] ?? false;
+		}
 	}
 
 	// returns an array of all keys for a meta field for a post, term or role
@@ -5929,7 +6023,7 @@ HTML;
 				break;
 			}
 			default: {
-				$e == null;
+				$e = null;
 			}
 		}
 
@@ -6293,7 +6387,13 @@ HTML;
 	public static function get_default($function, $type, $field) {
 		$keys = self::get_meta_field($function, $type, $field);
 
-		return $keys['default'] ?? '';
+		$result = '';
+
+		if (is_array($keys) && isset(reset($keys)['default'])) {
+			$result = reset($keys)['default'];
+		}
+
+		return $result;
 	}
 
 	// generate an .eml file which is a packaged up

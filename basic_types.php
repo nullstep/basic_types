@@ -5998,12 +5998,7 @@ HTML;
 			}
 		}
 
-		if (!$e) {
-			return false;
-		}
-		else {
-			return self::get_meta_fields(self::$$e[$type]['sections'])[$field] ?? false;
-		}
+		return ($e) ? self::get_meta_fields(self::$$e[$type]['sections']) : false;
 	}
 
 	// returns an array of all keys for a meta field for a post, term or role

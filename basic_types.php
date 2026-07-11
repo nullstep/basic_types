@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.4.5
+ * Version: 2.4.6
 */
 
 // ctrl+r for symbol list

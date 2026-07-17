@@ -6,7 +6,7 @@
  * Description: custom post/taxonomy/roles stuff
  * Author: nullstep
  * Author URI: https://nullstep.com
- * Version: 2.4.6
+ * Version: 2.4.7
 */
 
 // ctrl+r for symbol list
@@ -6219,12 +6219,21 @@ HTML;
 
 	// returns all posts with meta key/values that are
 	// of a date type that fall between start and end dates
+	// $meta is any other meta key/value to search by
 	// $start['key'] is the meta_key name and $start['value'] is the starting date
 	// $end['key'] is the meta_key name and $end['value'] is the ending date
 	// but $end can be null to just get all posts after a specified date
 
-	public static function get_posts_by_dates($type, $start, $end = null) {
+	public static function get_posts_by_dates($type, $meta, $start, $end = null) {
 		$query = ['relation' => 'AND'];
+
+		if (is_array($meta)) {
+			$query[] = [
+				'key' => self::prefix($type) . $meta['key'],
+				'value' => $meta['value'],
+				'compare' => '='
+			];
+		}
 
 		$query[] = [
 			'key' => self::prefix($type) . $start['key'],
